@@ -1,0 +1,124 @@
+{
+  "piper_load_time_ms": 1444.8,
+  "rvc_cold_load_time_ms": 649.5,
+  "piper_baselines": {
+    "short": {
+      "wav_path": "D:\\Raihan\\JARVIS\\engines\\voice_eval\\samples\\async_piper_short.wav",
+      "audio_dur_s": 3.715,
+      "synth_time_s": 0.3977,
+      "synth_time_ms": 397.7,
+      "rtf": 0.107
+    },
+    "medium": {
+      "wav_path": "D:\\Raihan\\JARVIS\\engines\\voice_eval\\samples\\async_piper_medium.wav",
+      "audio_dur_s": 7.802,
+      "synth_time_s": 0.6721,
+      "synth_time_ms": 672.1,
+      "rtf": 0.0862
+    },
+    "long": {
+      "wav_path": "D:\\Raihan\\JARVIS\\engines\\voice_eval\\samples\\async_piper_long.wav",
+      "audio_dur_s": 11.262,
+      "synth_time_s": 0.7259,
+      "synth_time_ms": 725.9,
+      "rtf": 0.0645
+    }
+  },
+  "benchmarks": [
+    {
+      "utt_id": "short",
+      "name": "Short Utterance (8 words)",
+      "f0method": "pm",
+      "text": "Good evening, Sir. All holographic systems are operational.",
+      "audio_dur_s": 3.7,
+      "piper_synth_time_s": 0.3977,
+      "rvc_conv_time_s": 10.151,
+      "total_prep_time_s": 10.549,
+      "rtf": 2.7324,
+      "speedup": 0.37,
+      "cpu_percent": 681.0,
+      "mem_rss_mb": 1439.8,
+      "output_wav": "D:\\Raihan\\JARVIS\\engines\\voice_eval\\samples\\async_teto_short_pm.wav"
+    },
+    {
+      "utt_id": "short",
+      "name": "Short Utterance (8 words)",
+      "f0method": "rmvpe",
+      "text": "Good evening, Sir. All holographic systems are operational.",
+      "audio_dur_s": 3.7,
+      "piper_synth_time_s": 0.3977,
+      "rvc_conv_time_s": 11.96,
+      "total_prep_time_s": 12.358,
+      "rtf": 3.2194,
+      "speedup": 0.31,
+      "cpu_percent": 558.2,
+      "mem_rss_mb": 1925.6,
+      "output_wav": "D:\\Raihan\\JARVIS\\engines\\voice_eval\\samples\\async_teto_short_rmvpe.wav"
+    },
+    {
+      "utt_id": "medium",
+      "name": "Medium Utterance (18 words)",
+      "f0method": "pm",
+      "text": "All background diagnostic services report nominal performance. The local database has been synchronized, and network latency is minimal.",
+      "audio_dur_s": 7.78,
+      "piper_synth_time_s": 0.6721,
+      "rvc_conv_time_s": 14.367,
+      "total_prep_time_s": 15.039,
+      "rtf": 1.8414,
+      "speedup": 0.54,
+      "cpu_percent": 768.2,
+      "mem_rss_mb": 1994.8,
+      "output_wav": "D:\\Raihan\\JARVIS\\engines\\voice_eval\\samples\\async_teto_medium_pm.wav"
+    },
+    {
+      "utt_id": "medium",
+      "name": "Medium Utterance (18 words)",
+      "f0method": "rmvpe",
+      "text": "All background diagnostic services report nominal performance. The local database has been synchronized, and network latency is minimal.",
+      "audio_dur_s": 7.78,
+      "piper_synth_time_s": 0.6721,
+      "rvc_conv_time_s": 15.836,
+      "total_prep_time_s": 16.508,
+      "rtf": 2.0298,
+      "speedup": 0.49,
+      "cpu_percent": 692.8,
+      "mem_rss_mb": 1977.2,
+      "output_wav": "D:\\Raihan\\JARVIS\\engines\\voice_eval\\samples\\async_teto_medium_rmvpe.wav"
+    },
+    {
+      "utt_id": "long",
+      "name": "Long Utterance (35 words)",
+      "f0method": "pm",
+      "text": "Diagnostic routines across the central computational bus indicate optimal throughput. Memory allocations remain within safe boundaries, and no anomalous network traffic has been detected on local ports.",
+      "audio_dur_s": 11.24,
+      "piper_synth_time_s": 0.7259,
+      "rvc_conv_time_s": 20.215,
+      "total_prep_time_s": 20.941,
+      "rtf": 1.795,
+      "speedup": 0.56,
+      "cpu_percent": 699.8,
+      "mem_rss_mb": 2099.6,
+      "output_wav": "D:\\Raihan\\JARVIS\\engines\\voice_eval\\samples\\async_teto_long_pm.wav"
+    },
+    {
+      "utt_id": "long",
+      "name": "Long Utterance (35 words)",
+      "f0method": "rmvpe",
+      "text": "Diagnostic routines across the central computational bus indicate optimal throughput. Memory allocations remain within safe boundaries, and no anomalous network traffic has been detected on local ports.",
+      "audio_dur_s": 11.24,
+      "piper_synth_time_s": 0.7259,
+      "rvc_conv_time_s": 27.042,
+      "total_prep_time_s": 27.767,
+      "rtf": 2.4011,
+      "speedup": 0.42,
+      "cpu_percent": 517.1,
+      "mem_rss_mb": 1830.4,
+      "output_wav": "D:\\Raihan\\JARVIS\\engines\\voice_eval\\samples\\async_teto_long_rmvpe.wav"
+    }
+  ],
+  "cold_vs_warm": {
+    "short_pm_cold_s": 12.64,
+    "short_pm_warm_s": 10.55,
+    "latency_saved_s": 2.09
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "sentences": [
+    {
+      "index": 1,
+      "text": "Good evening, Sir.",
+      "audio_dur_s": 1.277,
+      "conv_time_s": 7.406
+    },
+    {
+      "index": 2,
+      "text": "All holographic systems and diagnostic routines are operational.",
+      "audio_dur_s": 3.657,
+      "conv_time_s": 7.424
+    },
+    {
+      "index": 3,
+      "text": "Local memory allocations remain safe, and no anomalies have been detected.",
+      "audio_dur_s": 4.481,
+      "conv_time_s": 7.986
+    }
+  ],
+  "streaming_gaps": {
+    "gap_s1_s2_s": 6.57,
+    "gap_s2_s3_s": 4.68,
+    "total_dead_air_s": 11.26,
+    "total_experience_duration_s": 28.31
+  },
+  "full_response": {
+    "lead_time_before_audio_s": 14.47,
+    "audio_duration_s": 9.65,
+    "total_experience_duration_s": 24.11,
+    "dead_air_gaps_s": 0.0
+  },
+  "boundary_analysis": {
+    "boundary_energy_jumps_db": [
+      0.04,
+      -0.46
+    ],
+    "waveform_continuity": "Discontinuous at cuts; F0 resets on each sentence"
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "thread_benchmarks": [
+    {
+      "threads": 10,
+      "conversion_time_s": 8.75,
+      "cpu_percent": 715.0,
+      "mem_rss_mb": 1190.6
+    },
+    {
+      "threads": 6,
+      "conversion_time_s": 7.36,
+      "cpu_percent": 597.5,
+      "mem_rss_mb": 1288.4
+    },
+    {
+      "threads": 4,
+      "conversion_time_s": 7.94,
+      "cpu_percent": 400.2,
+      "mem_rss_mb": 1209.5
+    }
+  ],
+  "thermal_consecutive_runs": [
+    {
+      "run": 1,
+      "duration_s": 6.356,
+      "cpu_freq_mhz": 1700.0,
+      "mem_rss_mb": 1279.9
+    },
+    {
+      "run": 2,
+      "duration_s": 9.166,
+      "cpu_freq_mhz": 1700.0,
+      "mem_rss_mb": 1306.2
+    },
+    {
+      "run": 3,
+      "duration_s": 11.031,
+      "cpu_freq_mhz": 1457.0,
+      "mem_rss_mb": 1223.3
+    },
+    {
+      "run": 4,
+      "duration_s": 10.49,
+      "cpu_freq_mhz": 1700.0,
+      "mem_rss_mb": 1309.3
+    },
+    {
+      "run": 5,
+      "duration_s": 10.964,
+      "cpu_freq_mhz": 1700.0,
+      "mem_rss_mb": 1223.1
+    }
+  ],
+  "thermal_drift_pct": 72.5,
+  "memory_reclamation": {
+    "loaded_rss_mb": 1223.1,
+    "unloaded_rss_mb": 603.5,
+    "trimmed_rss_mb": 603.5,
+    "os_reclaimed_mb": 619.6
+  },
+  "worker_kill_ms": 4.71
+}

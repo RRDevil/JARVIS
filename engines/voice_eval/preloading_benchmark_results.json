@@ -1,0 +1,13 @@
+{
+  "idle_mem_mb": 386.18,
+  "piper_load_ms": 1379.49,
+  "piper_mem_rss_mb": 471.98,
+  "rvc_cold_load_ms": 997.32,
+  "rvc_loaded_mem_mb": 785.7,
+  "rvc_warm_load_ms": 544.78,
+  "rvc_unloaded_mem_mb": 745.41,
+  "gemini_baseline_stream_ms": 1162.53,
+  "gemini_concurrent_stream_ms": 1190.91,
+  "stream_delay_pct": 2.44,
+  "lead_time_saved_ms": 811.32
+}
