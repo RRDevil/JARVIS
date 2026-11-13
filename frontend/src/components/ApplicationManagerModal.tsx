@@ -1,9 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   ApplicationManifest,
-  AppCategory,
-  CapabilitySpec,
-  ProviderType,
   IntegrationActivityLogEntry,
 } from '../types/integrations';
 import {

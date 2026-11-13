@@ -17,6 +17,8 @@ from app.api.system import router as system_router
 from app.api.screen import router as screen_router
 from app.api.voice import router as voice_router
 from app.api.integrations import router as integrations_router
+from app.api.preferences import router as preferences_router
+from app.api.plans import router as plans_router
 
 
 @asynccontextmanager
@@ -57,6 +59,8 @@ app.include_router(system_router, prefix="/api")
 app.include_router(screen_router, prefix="/api")
 app.include_router(voice_router, prefix="/api")
 app.include_router(integrations_router, prefix="/api")
+app.include_router(preferences_router, prefix="/api")
+app.include_router(plans_router, prefix="/api")
 
 # Serve built production HUD assets if present
 frontend_dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"

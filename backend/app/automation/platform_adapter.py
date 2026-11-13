@@ -49,6 +49,13 @@ class UIControlInfo(BaseModel):
 class PlatformAdapter(ABC):
     """Abstract interface defining operating system interactions."""
 
+    def is_permission_granted(self) -> bool:
+        """Check if process has required OS automation/accessibility permissions.
+        
+        Defaults to True on Windows and mock environments; overridden on macOS to check TCC.
+        """
+        return True
+
     @abstractmethod
     def get_approved_apps(self) -> List[ApprovedApp]:
         """Return the list of pre-authorized applications."""

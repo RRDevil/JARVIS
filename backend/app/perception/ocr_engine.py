@@ -4,8 +4,10 @@ import asyncio
 import logging
 import time
 from typing import List, Optional
+import sys
 from PIL import Image
 
+from app.perception.base import OCREngineProvider
 from app.perception.models import BoundingBox, OCRLine, OCRResult, OCRWord
 
 logger = logging.getLogger("jarvis.perception.ocr")
@@ -16,21 +18,32 @@ class OCRError(Exception):
     pass
 
 
-class LocalOCREngine:
-    """Local, hardware-accelerated Windows OCR engine with spatial bounding boxes and reading order."""
+class LocalOCREngine(OCREngineProvider):
+    """Local, hardware-accelerated OCR engine with spatial bounding boxes and reading order across platforms."""
 
     def __init__(self, default_lang: str = "en"):
         self.default_lang = default_lang
         self._winocr_available = False
-        try:
-            import winocr
-            self._winocr_available = True
-        except ImportError:
-            logger.warning("winocr / Windows.Media.Ocr not installed; running in fallback mode.")
+        self._macos_engine = None
+
+        if sys.platform == "darwin":
+            try:
+                from app.perception.ocr_macos import MacOSVisionOCREngine
+                self._macos_engine = MacOSVisionOCREngine(default_lang=default_lang)
+            except Exception:
+                pass
+        else:
+            try:
+                import winocr
+                self._winocr_available = True
+            except ImportError:
+                logger.warning("winocr / Windows.Media.Ocr not installed; running in fallback mode.")
 
     @property
     def is_available(self) -> bool:
-        """Check if native Windows OCR is available on this environment."""
+        """Check if native OCR is available on this environment."""
+        if self._macos_engine:
+            return self._macos_engine.is_available
         return self._winocr_available
 
     async def recognize(
@@ -55,7 +68,11 @@ class LocalOCREngine:
         start_time = time.perf_counter()
         target_lang = lang or self.default_lang
 
-        # 1. Native Windows Media OCR
+        # 1. Native macOS Vision OCR
+        if self._macos_engine and self._macos_engine.is_available:
+            return await self._macos_engine.recognize(image, lang=target_lang)
+
+        # 2. Native Windows Media OCR
         if self._winocr_available:
             try:
                 import winocr

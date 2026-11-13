@@ -17,10 +17,18 @@ def get_platform_adapter() -> PlatformAdapter:
         return _current_adapter
 
     # Check for test/mock override
-    if os.environ.get("JARVIS_MOCK_PLATFORM") == "1" or sys.platform != "win32":
+    if os.environ.get("JARVIS_MOCK_PLATFORM") == "1":
         _current_adapter = MockPlatformAdapter()
-    else:
+    elif sys.platform == "win32":
         _current_adapter = WindowsPlatformAdapter()
+    elif sys.platform == "darwin":
+        try:
+            from app.automation.macos_adapter import MacOSPlatformAdapter
+            _current_adapter = MacOSPlatformAdapter()
+        except Exception:
+            _current_adapter = MockPlatformAdapter()
+    else:
+        _current_adapter = MockPlatformAdapter()
 
     return _current_adapter
 

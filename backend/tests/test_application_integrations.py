@@ -115,18 +115,18 @@ class TestPermissionsAndApprovalBinding:
 
     def test_app_and_capability_disable_override(self):
         manifest = application_manager.get_application("browser.opera_gx")
-        cap = next(c for c in manifest.capabilities if c.id == "browser.navigate")
+        cap = next(c for c in manifest.capabilities if c.id == "browser.read_page")
 
         # Initially permitted
         decision, _, _ = integration_permissions.evaluate_capability(
-            manifest, cap, ProviderType.BROWSER_AUTOMATION, {"url": "https://example.com"}
+            manifest, cap, ProviderType.BROWSER_AUTOMATION, {}
         )
         assert decision == PolicyDecision.ALLOW_AUTO
 
         # Disable capability
         integration_permissions.set_capability_enabled(manifest.app_id, cap.id, False)
         decision, reason, _ = integration_permissions.evaluate_capability(
-            manifest, cap, ProviderType.BROWSER_AUTOMATION, {"url": "https://example.com"}
+            manifest, cap, ProviderType.BROWSER_AUTOMATION, {}
         )
         assert decision == PolicyDecision.BLOCK
         assert "disabled" in reason
@@ -134,14 +134,14 @@ class TestPermissionsAndApprovalBinding:
         # Re-enable capability
         integration_permissions.set_capability_enabled(manifest.app_id, cap.id, True)
         decision, _, _ = integration_permissions.evaluate_capability(
-            manifest, cap, ProviderType.BROWSER_AUTOMATION, {"url": "https://example.com"}
+            manifest, cap, ProviderType.BROWSER_AUTOMATION, {}
         )
         assert decision == PolicyDecision.ALLOW_AUTO
 
         # Disable whole application
         integration_permissions.set_app_enabled(manifest.app_id, False)
         decision, reason, _ = integration_permissions.evaluate_capability(
-            manifest, cap, ProviderType.BROWSER_AUTOMATION, {"url": "https://example.com"}
+            manifest, cap, ProviderType.BROWSER_AUTOMATION, {}
         )
         assert decision == PolicyDecision.BLOCK
 

@@ -1,5 +1,7 @@
 """Approval Request Management and Security Handshake (Phase 3.4)."""
 
+import hashlib
+import json
 import threading
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -7,6 +9,12 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 
 from app.tools.base import RiskTier
+
+
+def compute_action_payload_hash(tool_name: str, parameters: Dict[str, Any]) -> str:
+    """Deterministic SHA-256 cryptographic hash of canonical tool name and parameters."""
+    canonical = json.dumps({"tool": tool_name, "params": parameters}, sort_keys=True, default=str)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 class ApprovalRequestModel(BaseModel):
@@ -21,6 +29,7 @@ class ApprovalRequestModel(BaseModel):
     toolName: str
     riskTier: RiskTier
     parameters: Dict[str, Any]
+    payloadHash: Optional[str] = None
     requestedAt: str
     expiresAt: str
     status: Literal["pending", "approved", "rejected", "expired"] = "pending"
@@ -43,6 +52,11 @@ class ApprovalExpiredError(ApprovalError):
 
 class ApprovalAlreadyResolvedError(ApprovalError):
     """Raised when attempting to reuse an already resolved approval token."""
+    pass
+
+
+class ApprovalIntegrityError(ApprovalError):
+    """Raised when approval payload hash fails verification due to parameter tampering."""
     pass
 
 
@@ -70,6 +84,7 @@ class ApprovalManager:
             expires = now + timedelta(seconds=ttl)
 
             approval_id = f"appr-{uuid.uuid4().hex[:10]}"
+            payload_hash = compute_action_payload_hash(tool_name, parameters)
             req = ApprovalRequestModel(
                 id=approval_id,
                 toolExecutionId=execution_id,
@@ -77,6 +92,7 @@ class ApprovalManager:
                 toolName=tool_name,
                 riskTier=risk_tier,
                 parameters=parameters,
+                payloadHash=payload_hash,
                 requestedAt=now.isoformat(),
                 expiresAt=expires.isoformat(),
                 status="pending",
@@ -134,9 +150,6 @@ class ApprovalManager:
                 )
 
             if req.status in ("approved", "rejected"):
-                # Idempotent response: if already resolved with the same decision, return existing request safely
-                if (req.status == "approved" and approved) or (req.status == "rejected" and not approved):
-                    return req
                 raise ApprovalAlreadyResolvedError(
                     f"Approval token '{approval_id}' was already resolved as '{req.status}'."
                 )

@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional, Set
 
 from app.automation.factory import get_platform_adapter
 from app.integrations.models import (
+    AppCategory,
     ApplicationManifest,
     CapabilitySpec,
     IntegrationHealth,
@@ -114,6 +115,26 @@ class DesktopUIProvider(BaseIntegrationProvider):
                 )
                 ocr_text = inspect_resp.screen.ocr_result.full_text if inspect_resp.screen.ocr_result else ""
                 lines = inspect_resp.screen.ocr_result.lines if inspect_resp.screen.ocr_result else []
+
+                # Semantic interface parsing for messaging apps (Instagram, WhatsApp, Discord)
+                is_messaging = manifest.category == AppCategory.MESSAGING or "messages" in cap_id
+                semantic_data = None
+                if is_messaging:
+                    from app.perception.semantic.classifier import semantic_perception_engine
+                    sem_res = semantic_perception_engine.analyze_screen(
+                        app_name=manifest.display_name,
+                        ocr_lines=lines,
+                        screen_width=inspect_resp.screen.width,
+                        screen_height=inspect_resp.screen.height,
+                        window_title=inspect_resp.screen.active_window_title or manifest.display_name,
+                    )
+                    semantic_data = {
+                        "open_conversation": sem_res.open_conversation.model_dump() if sem_res.open_conversation else None,
+                        "verified_conversations": [c.model_dump() for c in sem_res.verified_conversations],
+                        "isolated_notes": [n.model_dump() for n in sem_res.detected_notes],
+                        "total_conversations": sem_res.total_conversations_found,
+                    }
+
                 return {
                     "action": "desktop_ui_read",
                     "app_id": manifest.app_id,
@@ -121,7 +142,8 @@ class DesktopUIProvider(BaseIntegrationProvider):
                     "window_title": inspect_resp.screen.active_window_title,
                     "extracted_text": ocr_text,
                     "line_count": len(lines),
-                    "confidence": 0.90,
+                    "semantic_conversations": semantic_data,
+                    "confidence": 0.95 if semantic_data else 0.90,
                 }
 
             # --- Typing / Editing / Drafting Capabilities ---

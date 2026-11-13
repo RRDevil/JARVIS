@@ -514,6 +514,12 @@ class VisualTypeIntoElementTool(BaseTool):
                 if win:
                     target_hwnd = win.handle
                     app_title = win.title
+                elif params.x is None and params.y is None and not params.target_description and not params.element_id:
+                    return ToolResult(
+                        success=False,
+                        error=f"Target application '{params.app_name}' is not currently running. Please open it before typing.",
+                        error_code="APPLICATION_NOT_RUNNING",
+                    )
 
             # 2. Case A: Direct Screen Coordinates (x, y) provided
             if params.x is not None and params.y is not None:

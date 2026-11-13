@@ -15,6 +15,7 @@ from app.execution.approval import (
     ApprovalManager,
     ApprovalRequestModel,
     approval_manager,
+    compute_action_payload_hash,
 )
 from app.tools.base import (
     ExecutionContext,
@@ -42,6 +43,7 @@ class ToolExecutionModel(BaseModel):
     completedAt: Optional[str] = None
     result: Optional[Any] = None
     error: Optional[str] = None
+    sessionId: Optional[str] = None
 
 
 class ExecutionEngine:
@@ -73,6 +75,13 @@ class ExecutionEngine:
         """Fetch execution record by ID."""
         with self._lock:
             return self._executions.get(execution_id)
+
+    def clear(self) -> None:
+        """Clear all active and completed executions and caches (primarily for test teardown)."""
+        with self._lock:
+            self._executions.clear()
+            self._running_tasks.clear()
+            self._completed_action_cache.clear()
 
     async def propose(
         self,
@@ -179,19 +188,21 @@ class ExecutionEngine:
                         self._executions[execution_id] = failed_exec
                     return failed_exec, None
 
-        # 2.2 Deduplication & completed action cache check (prevents loop on recently completed actions)
+        # 2.2 Deduplication & completed action cache check (scoped to session, prevents loops on approved actions)
         sig = self._compute_action_signature(tool_name, params_dict)
-        with self._lock:
-            if sig in self._completed_action_cache:
-                cached_exec, cached_time = self._completed_action_cache[sig]
-                if (time.time() - cached_time) < 60.0 and cached_exec.status == ToolStatus.SUCCESS:
-                    audit_logger.log(
-                        action_name=f"CACHE_HIT_{tool_name}",
-                        risk_tier=tool.risk_tier,
-                        status="IDEMPOTENT_CACHE_RETURN",
-                        details={"original_execution_id": cached_exec.id, "params": params_dict},
-                    )
-                    return cached_exec, None
+        cache_key = f"{session_id}::{sig}" if session_id else None
+        if cache_key:
+            with self._lock:
+                if cache_key in self._completed_action_cache:
+                    cached_exec, cached_time = self._completed_action_cache[cache_key]
+                    if (time.time() - cached_time) < 60.0 and cached_exec.status == ToolStatus.SUCCESS:
+                        audit_logger.log(
+                            action_name=f"CACHE_HIT_{tool_name}",
+                            risk_tier=tool.risk_tier,
+                            status="IDEMPOTENT_CACHE_RETURN",
+                            details={"original_execution_id": cached_exec.id, "params": params_dict},
+                        )
+                        return cached_exec, None
 
         # 3. Policy evaluation
         policy_eval = self.policy.evaluate(tool, params_dict)
@@ -246,6 +257,7 @@ class ExecutionEngine:
                 parameters=params_dict,
                 status=ToolStatus.PENDING_APPROVAL,
                 requestedAt=now,
+                sessionId=session_id,
             )
 
             with self._lock:
@@ -272,6 +284,7 @@ class ExecutionEngine:
             parameters=params_dict,
             status=ToolStatus.RUNNING,
             requestedAt=now,
+            sessionId=session_id,
         )
         with self._lock:
             self._executions[execution_id] = exec_model
@@ -316,6 +329,24 @@ class ExecutionEngine:
         if exec_model.status in (ToolStatus.SUCCESS, ToolStatus.FAILED):
             return approval_req, exec_model
 
+        # Cryptographic Payload Integrity Check: Parameters must strictly match the approved payload
+        current_hash = self._compute_action_signature(exec_model.toolName, exec_model.parameters)
+        if approval_req.payloadHash and approval_req.payloadHash != current_hash:
+            err_msg = (
+                f"Approval payload integrity failure: parameters for '{exec_model.toolName}' "
+                f"have changed or been tampered with since authorization '{approval_id}' was issued."
+            )
+            audit_logger.log(
+                action_name=f"PAYLOAD_MISMATCH_{exec_model.toolName}",
+                risk_tier=exec_model.riskTier,
+                status="PAYLOAD_TAMPERED",
+                details={"execution_id": exec_model.id, "approval_id": approval_id, "error": err_msg},
+            )
+            exec_model.status = ToolStatus.FAILED
+            exec_model.completedAt = now
+            exec_model.error = err_msg
+            return approval_req, exec_model
+
         audit_logger.log(
             action_name=f"USER_APPROVE_{exec_model.toolName}",
             risk_tier=exec_model.riskTier,
@@ -334,11 +365,12 @@ class ExecutionEngine:
             approval_id=approval_id,
         )
 
-        # Cache completed consequential action to prevent loops
-        if executed_model.status == ToolStatus.SUCCESS:
+        # Cache completed consequential action to prevent loops within this session
+        if executed_model.status == ToolStatus.SUCCESS and exec_model.sessionId:
             sig = self._compute_action_signature(exec_model.toolName, exec_model.parameters)
+            cache_key = f"{exec_model.sessionId}::{sig}"
             with self._lock:
-                self._completed_action_cache[sig] = (executed_model, time.time())
+                self._completed_action_cache[cache_key] = (executed_model, time.time())
 
         return approval_req, executed_model
 

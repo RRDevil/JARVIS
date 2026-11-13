@@ -9,6 +9,7 @@ import {
   KeybindSettings,
   DEFAULT_KEYBINDS,
 } from '../types/settings';
+import { NarrationSettings, DEFAULT_NARRATION_SETTINGS } from '../types/narration';
 import { soundManager } from '../services/soundManager';
 import {
   fetchVoiceList,
@@ -272,6 +273,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     onUpdateSettings((prev) => ({
       ...prev,
       voice: { ...prev.voice, deliveryProfile: profile },
+    }));
+  };
+
+  const handleNarrationSettingChange = (key: keyof NarrationSettings, value: any) => {
+    soundManager.play('CLICK_CUE');
+    onUpdateSettings((prev) => ({
+      ...prev,
+      voice: {
+        ...prev.voice,
+        narration: {
+          ...(prev.voice.narration || DEFAULT_NARRATION_SETTINGS),
+          [key]: value,
+        },
+      },
     }));
   };
 
@@ -1152,6 +1167,94 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <div style={{ fontSize: '0.66rem', color: 'var(--hud-text-muted)', marginTop: '0.25rem', lineHeight: '1.2' }}>
                     {DELIVERY_PROFILES[settings.voice.deliveryProfile || 'relaxed']?.description}
                   </div>
+                </div>
+
+                {/* Proactive Task Narration Subsystem (Phase 5.3) */}
+                <div style={{ marginTop: '0.4rem', padding: '0.45rem 0.55rem', background: 'rgba(0, 0, 0, 0.35)', borderRadius: '3px', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                    <span style={{ color: '#38bdf8', fontWeight: 600, fontSize: '0.78rem' }}>Task Narration & Spoken Milestones</span>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer', fontSize: '0.72rem' }}>
+                      <input
+                        type="checkbox"
+                        checked={settings.voice.narration?.enabled ?? true}
+                        onChange={(e) => handleNarrationSettingChange('enabled', e.target.checked)}
+                        style={{ accentColor: 'var(--hud-primary)' }}
+                      />
+                      <span>Active</span>
+                    </label>
+                  </div>
+
+                  {(settings.voice.narration?.enabled ?? true) && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.3rem' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.35rem', fontSize: '0.74rem' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={settings.voice.narration?.acknowledgeTasks ?? true}
+                            onChange={(e) => handleNarrationSettingChange('acknowledgeTasks', e.target.checked)}
+                            style={{ accentColor: 'var(--hud-primary)' }}
+                          />
+                          <span>Immediate Acknowledgment</span>
+                        </label>
+
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={settings.voice.narration?.announceApprovals ?? true}
+                            onChange={(e) => handleNarrationSettingChange('announceApprovals', e.target.checked)}
+                            style={{ accentColor: 'var(--hud-primary)' }}
+                          />
+                          <span>Announce Approvals</span>
+                        </label>
+
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={settings.voice.narration?.announceProgress ?? true}
+                            onChange={(e) => handleNarrationSettingChange('announceProgress', e.target.checked)}
+                            style={{ accentColor: 'var(--hud-primary)' }}
+                          />
+                          <span>Action Progress Updates</span>
+                        </label>
+
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={settings.voice.narration?.announceErrors ?? true}
+                            onChange={(e) => handleNarrationSettingChange('announceErrors', e.target.checked)}
+                            style={{ accentColor: 'var(--hud-primary)' }}
+                          />
+                          <span>Announce Errors & Recovery</span>
+                        </label>
+
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={settings.voice.narration?.announceCompletion ?? true}
+                            onChange={(e) => handleNarrationSettingChange('announceCompletion', e.target.checked)}
+                            style={{ accentColor: 'var(--hud-primary)' }}
+                          />
+                          <span>Announce Completion</span>
+                        </label>
+                      </div>
+
+                      <div style={{ marginTop: '0.2rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68rem', color: 'var(--hud-text-muted)' }}>
+                          <span>Progress Throttling Interval</span>
+                          <span>{settings.voice.narration?.progressIntervalSeconds ?? 8}s</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="4"
+                          max="20"
+                          step="1"
+                          value={settings.voice.narration?.progressIntervalSeconds ?? 8}
+                          onChange={(e) => handleNarrationSettingChange('progressIntervalSeconds', parseFloat(e.target.value))}
+                          style={{ width: '100%', accentColor: 'var(--hud-primary)', marginTop: '0.15rem' }}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

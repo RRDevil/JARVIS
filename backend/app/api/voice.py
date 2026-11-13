@@ -2,7 +2,7 @@
 FastAPI router for J.A.R.V.I.S. Voice Interaction Subsystem (STT, TTS, Profiles & Providers).
 """
 
-from typing import List
+from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 
@@ -390,3 +390,92 @@ def set_stt_model(
         )
     voice_service.set_stt_model(request.model_size)
     return {"status": "ok", "model_size": request.model_size}
+
+
+# --- Proactive Task Narration Endpoints ---
+
+from app.voice.narration import task_narration_engine, TaskLifecycleEvent, NarrationSettings
+
+
+class NarrationEventRequest(BaseModel):
+    task_id: str
+    event_type: str
+    user_prompt: Optional[str] = None
+    tool_name: Optional[str] = None
+    parameters: Optional[dict] = None
+    action_summary: Optional[str] = None
+    approved: Optional[bool] = None
+    error_message: Optional[str] = None
+    has_pending_approval: Optional[bool] = False
+    is_success: Optional[bool] = True
+
+
+@router.get(
+    "/narration/settings",
+    response_model=NarrationSettings,
+    summary="Get current voice narration settings",
+)
+def get_narration_settings(
+    _authorized: bool = Depends(verify_secret_token),
+) -> NarrationSettings:
+    """Retrieve thresholds, flags, and interval configurations for task narration."""
+    return task_narration_engine.settings
+
+
+@router.post(
+    "/narration/settings",
+    response_model=NarrationSettings,
+    summary="Update voice narration settings",
+)
+def update_narration_settings(
+    settings_update: dict = Body(...),
+    _authorized: bool = Depends(verify_secret_token),
+) -> NarrationSettings:
+    """Update progress narration frequency, acknowledgment flags, or enabled state."""
+    return task_narration_engine.configure(settings_update)
+
+
+@router.post(
+    "/narration/event",
+    response_model=Optional[TaskLifecycleEvent],
+    summary="Evaluate and generate a spoken narration event",
+)
+def evaluate_narration_event(
+    req: NarrationEventRequest,
+    _authorized: bool = Depends(verify_secret_token),
+) -> Optional[TaskLifecycleEvent]:
+    """Evaluate task lifecycle transitions and formulate grounded speech text."""
+    evt = req.event_type.upper()
+    if evt in ("TASK_RECEIVED", "TASK_ACKNOWLEDGED") and req.user_prompt:
+        return task_narration_engine.generate_acknowledgment(req.user_prompt, req.task_id)
+    elif evt == "ACTION_STARTED" and req.tool_name:
+        return task_narration_engine.generate_action_started(req.tool_name, req.parameters or {}, req.task_id)
+    elif evt == "APPROVAL_REQUIRED" and req.action_summary:
+        return task_narration_engine.generate_approval_required(
+            action_summary=req.action_summary,
+            risk_tier="CONSEQUENTIAL",
+            capability=(req.parameters or {}).get("capability_id"),
+            app_id=(req.parameters or {}).get("app_id"),
+            task_id=req.task_id,
+        )
+    elif evt in ("APPROVAL_GRANTED", "APPROVAL_DENIED") and req.action_summary:
+        return task_narration_engine.generate_approval_decision(
+            approved=bool(req.approved),
+            action_summary=req.action_summary,
+            task_id=req.task_id,
+        )
+    elif evt in ("ACTION_FAILED", "RECOVERY_STARTED") and req.tool_name:
+        return task_narration_engine.generate_error(
+            tool_name=req.tool_name,
+            error_message=req.error_message or "Unknown failure",
+            task_id=req.task_id,
+            recovery_attempted=(evt == "RECOVERY_STARTED"),
+        )
+    elif evt in ("TASK_COMPLETED", "TASK_FAILED", "TASK_CANCELLED"):
+        return task_narration_engine.generate_completion(
+            task_id=req.task_id,
+            has_pending_approval=bool(req.has_pending_approval),
+            is_success=(evt == "TASK_COMPLETED"),
+            is_cancelled=(evt == "TASK_CANCELLED"),
+        )
+    return None

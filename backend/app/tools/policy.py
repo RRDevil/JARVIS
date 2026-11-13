@@ -103,9 +103,11 @@ class PolicyEngine:
                 app_id = raw_parameters.get("app_id")
                 cap_id = raw_parameters.get("capability_id")
                 if app_id and cap_id:
-                    cap_spec = application_registry.get_capability(app_id, cap_id)
-                    if cap_spec:
-                        effective_risk_tier = cap_spec.risk_tier
+                    manifest = application_registry.get(app_id)
+                    if manifest:
+                        cap_spec = next((c for c in manifest.capabilities if c.id == cap_id), None)
+                        if cap_spec:
+                            effective_risk_tier = cap_spec.risk_tier
             except Exception:
                 pass
 
@@ -210,15 +212,17 @@ class PolicyEngine:
             target = target or "UI element"
             return f"Perform {btn}-click on grounded element '{target}'"
         if tool.name == "visual_type_into_element":
-            txt_len = len(params.get("text", ""))
+            raw_text = str(params.get("text", ""))
+            txt_preview = f'"{raw_text[:40]}..."' if len(raw_text) > 40 else f'"{raw_text}"'
+            target = params.get("app_name") or params.get("target_description") or params.get("element_id") or "target application"
             if params.get("x") is not None and params.get("y") is not None:
-                return f"Type {txt_len} characters at screen coordinates ({params['x']}, {params['y']})"
-            target = params.get("app_name") or params.get("target_description") or params.get("element_id") or "application"
-            return f"Type {txt_len} characters into '{target}'"
+                return f"Type {txt_preview} at screen coordinates ({params['x']}, {params['y']})"
+            return f"Type {txt_preview} into '{target}'"
         if tool.name == "desktop_type_text":
-            txt_len = len(params.get("text", ""))
+            raw_text = str(params.get("text", ""))
+            txt_preview = f'"{raw_text[:40]}..."' if len(raw_text) > 40 else f'"{raw_text}"'
             target = params.get("app_name") or (f"coordinates ({params['x']}, {params['y']})" if params.get("x") is not None else "active window")
-            return f"Type {txt_len} characters into {target}"
+            return f"Type {txt_preview} into {target}"
         if tool.name == "visual_locate_elements":
             q = params.get("query") or "interactive controls"
             return f"Locate visible UI elements on screen: '{q}'"

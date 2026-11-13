@@ -33,6 +33,17 @@ from app.integrations.tools import (
     AppExecuteCapabilityTool,
     AppListCapabilitiesTool,
 )
+from app.memory.tools import (
+    PreferenceQueryTool,
+    PreferenceStoreTool,
+)
+from app.perception.semantic.tools import (
+    SemanticReadConversationsTool,
+)
+from app.planning.tools import (
+    PlanCreateTool,
+    PlanGetTool,
+)
 
 
 def register_default_windows_tools(registry: ToolRegistry = tool_registry) -> None:
@@ -65,6 +76,12 @@ def register_default_windows_tools(registry: ToolRegistry = tool_registry) -> No
         AppDiscoverTool(),
         AppListCapabilitiesTool(),
         AppExecuteCapabilityTool(),
+        # Advanced Reasoning & Preferences (Phase 6 & 7)
+        PreferenceQueryTool(),
+        PreferenceStoreTool(),
+        SemanticReadConversationsTool(),
+        PlanCreateTool(),
+        PlanGetTool(),
     ]
     for tool in tools:
         if not registry.has_tool(tool.name):

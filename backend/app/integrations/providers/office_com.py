@@ -9,6 +9,7 @@ import logging
 import os
 from typing import Any, Dict, Optional, Set
 
+from app.integrations.base import OfficeAutomationProvider
 from app.integrations.models import (
     ApplicationManifest,
     CapabilitySpec,
@@ -34,11 +35,25 @@ except ImportError:
     HAS_COM = False
 
 
-class OfficeCOMProvider(BaseIntegrationProvider):
+class OfficeCOMProvider(BaseIntegrationProvider, OfficeAutomationProvider):
     """Integrates with Microsoft Office desktop applications via native COM automation."""
 
     def __init__(self):
         self._active_operations: Set[str] = set()
+
+    @property
+    def is_available(self) -> bool:
+        return HAS_COM
+
+    async def execute_office_capability(
+        self,
+        manifest: ApplicationManifest,
+        capability: CapabilitySpec,
+        parameters: Dict[str, Any],
+        context: ExecutionContext,
+    ) -> Dict[str, Any]:
+        """Execute Office capability via COM."""
+        return await self.execute_capability(manifest, capability, parameters, context)
 
     @property
     def provider_type(self) -> ProviderType:

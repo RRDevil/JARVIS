@@ -16,6 +16,7 @@ from app.providers.base import (
     ProviderEvent,
     UsageMetadata,
 )
+from app.voice.narration import task_narration_engine
 
 
 def sanitize_error_message(err_str: str) -> str:
@@ -231,12 +232,13 @@ class GeminiProvider(BaseAIProvider):
         # Determine models to attempt: start with configured model, then prioritize robust fallback models
         models_to_try = [self.model]
         for candidate in [
+            "gemini-flash-lite-latest",
+            "gemini-flash-latest",
+            "gemini-3.6-flash",
+            "gemini-3.5-flash-lite",
+            "gemini-3.5-flash",
             "gemini-3.1-flash-lite",
             "gemini-3-flash-preview",
-            "gemini-flash-lite-latest",
-            "gemini-3.5-flash-lite",
-            "gemini-flash-latest",
-            "gemini-3.5-flash",
         ]:
             if candidate not in models_to_try:
                 models_to_try.append(candidate)
@@ -356,6 +358,7 @@ class GeminiProvider(BaseAIProvider):
 
                             response_parts = []
                             for call in function_calls:
+                                call_args = dict(call.args or {})
                                 tool_stage = (
                                     "READING_OCR"
                                     if call.name == "windows_read_screen_text"
@@ -370,11 +373,28 @@ class GeminiProvider(BaseAIProvider):
                                     tool_name=call.name,
                                     stage=tool_stage,
                                     turn_index=turn_index,
+                                    details={"args": call_args},
                                 )
+
+                                # Task progress narration for action start
+                                narr_start = task_narration_engine.generate_action_started(
+                                    tool_name=call.name,
+                                    parameters=call_args,
+                                    task_id=request_id,
+                                    stage=tool_stage,
+                                )
+                                if narr_start and narr_start.is_narratable and narr_start.narration_text:
+                                    yield ProviderEvent(
+                                        event_type="narration",
+                                        request_id=request_id,
+                                        session_id=session_id,
+                                        narration=narr_start.model_dump(),
+                                        stage=tool_stage,
+                                    )
 
                                 exec_model, approval = await execution_engine.propose(
                                     tool_name=call.name,
-                                    raw_parameters=dict(call.args or {}),
+                                    raw_parameters=call_args,
                                     session_id=session_id,
                                 )
 
@@ -394,6 +414,24 @@ class GeminiProvider(BaseAIProvider):
                                         tool_status="requires_approval",
                                         turn_index=turn_index,
                                     )
+
+                                    # Narration alert for approval requirement
+                                    narr_appr = task_narration_engine.generate_approval_required(
+                                        action_summary=approval.actionSummary,
+                                        risk_tier=approval.riskTier.value if hasattr(approval.riskTier, "value") else str(approval.riskTier),
+                                        capability=call_args.get("capability_id"),
+                                        app_id=call_args.get("app_id"),
+                                        task_id=request_id,
+                                        approval_id=approval.id,
+                                    )
+                                    if narr_appr and narr_appr.is_narratable and narr_appr.narration_text:
+                                        yield ProviderEvent(
+                                            event_type="narration",
+                                            request_id=request_id,
+                                            session_id=session_id,
+                                            narration=narr_appr.model_dump(),
+                                            stage="AWAITING_APPROVAL",
+                                        )
                                 else:
                                     is_success = exec_model.status in (ToolStatus.SUCCESS, "success")
                                     tool_resp = {
@@ -409,6 +447,36 @@ class GeminiProvider(BaseAIProvider):
                                         tool_status="success" if is_success else "failed",
                                         turn_index=turn_index,
                                     )
+
+                                    if is_success:
+                                        narr_comp = task_narration_engine.generate_action_completed(
+                                            tool_name=call.name,
+                                            result=exec_model.result,
+                                            task_id=request_id,
+                                            is_success=True,
+                                        )
+                                        if narr_comp and narr_comp.is_narratable and narr_comp.narration_text:
+                                            yield ProviderEvent(
+                                                event_type="narration",
+                                                request_id=request_id,
+                                                session_id=session_id,
+                                                narration=narr_comp.model_dump(),
+                                                stage="VERIFYING",
+                                            )
+                                    else:
+                                        narr_err = task_narration_engine.generate_error(
+                                            tool_name=call.name,
+                                            error_message=str(exec_model.error or "Operation failed"),
+                                            task_id=request_id,
+                                        )
+                                        if narr_err and narr_err.is_narratable and narr_err.narration_text:
+                                            yield ProviderEvent(
+                                                event_type="narration",
+                                                request_id=request_id,
+                                                session_id=session_id,
+                                                narration=narr_err.model_dump(),
+                                                stage="FAILED",
+                                            )
 
                                 response_parts.append(
                                     types.Part.from_function_response(
@@ -435,6 +503,10 @@ class GeminiProvider(BaseAIProvider):
                             contents.append(types.Content(role="model", parts=call_parts))
                             # Append user turn with tool execution responses
                             contents.append(types.Content(role="user", parts=response_parts))
+
+                            # Break agent orchestration loop immediately if human operator approval is pending
+                            if has_pending_approval:
+                                break
 
                         # Update active model to the successfully verified model
                         self.model = current_model
@@ -474,9 +546,24 @@ class GeminiProvider(BaseAIProvider):
                     usage=usage_meta,
                 )
 
-            # 4. Emit message_complete event
+            # 4. Emit message_complete event and completion narration
             total_duration_ms = round((time.time() - start_time) * 1000, 2)
             full_text = "".join(accumulated_text)
+
+            narr_done = task_narration_engine.generate_completion(
+                task_id=request_id,
+                has_pending_approval=has_pending_approval,
+                is_success=True,
+                conversational_text_present=bool(full_text.strip()),
+            )
+            if narr_done and narr_done.is_narratable and narr_done.narration_text:
+                yield ProviderEvent(
+                    event_type="narration",
+                    request_id=request_id,
+                    session_id=session_id,
+                    narration=narr_done.model_dump(),
+                    stage="COMPLETED",
+                )
 
             yield ProviderEvent(
                 event_type="message_complete",
@@ -583,9 +670,11 @@ class GeminiProvider(BaseAIProvider):
 
             if is_nav_intent and not is_negated:
                 target_url = None
+                matched_site_key = None
                 for site_key, site_url in known_web_targets.items():
                     if site_key in prompt:
                         target_url = site_url
+                        matched_site_key = site_key
                         break
                 if not target_url:
                     import re
@@ -595,13 +684,19 @@ class GeminiProvider(BaseAIProvider):
                         target_url = raw_u if raw_u.startswith("http") else f"https://{raw_u}"
 
                 if target_url:
+                    from app.memory.service import preference_service
+                    res_pref = preference_service.resolve_application(
+                        website_domain=matched_site_key or "web",
+                        workflow_type="browse",
+                    )
+                    chosen_browser = res_pref.resolved_browser_id or "browser.opera_gx"
                     matched_tool = "app_execute_capability"
                     tool_params = {
-                        "app_id": "browser.opera_gx",
+                        "app_id": chosen_browser,
                         "capability_id": "browser.navigate",
                         "parameters": {"url": target_url},
                     }
-                    action_desc = f"navigated to '{target_url}' in Opera GX"
+                    action_desc = f"navigated to '{target_url}' in {chosen_browser}"
 
             if not matched_tool and is_launch_intent and not is_negated:
                 if any(kw in prompt for kw in ["notepad", "note pad"]):

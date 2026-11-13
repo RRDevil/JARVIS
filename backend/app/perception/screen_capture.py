@@ -13,6 +13,7 @@ from typing import List, Optional, Tuple
 import mss
 from PIL import Image
 
+from app.perception.base import ScreenCaptureProvider
 from app.perception.models import CapturedScreen, CaptureRegion, MonitorInfo
 
 logger = logging.getLogger("jarvis.perception.capture")
@@ -28,7 +29,7 @@ class MonitorNotFoundError(ScreenCaptureError):
     pass
 
 
-class ScreenCaptureEngine:
+class ScreenCaptureEngine(ScreenCaptureProvider):
     """Thread-safe on-demand Windows screen capture engine with multi-monitor support."""
 
     def __init__(self):
@@ -232,6 +233,23 @@ class ScreenCaptureEngine:
         except Exception:
             pass
         return None
+
+    def capture_region(self, region: CaptureRegion) -> Tuple[Image.Image, Optional[CaptureRegion]]:
+        """Capture a specific bounding box region across virtual display coordinates."""
+        self._ensure_desktop_access()
+        try:
+            with mss.MSS() as sct:
+                box = {
+                    "left": region.left,
+                    "top": region.top,
+                    "width": region.width,
+                    "height": region.height,
+                }
+                shot = sct.grab(box)
+                img = Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
+                return img, region
+        except Exception as exc:
+            raise ScreenCaptureError(f"Failed to capture region {region}: {exc}") from exc
 
     def capture_active_window(self) -> Tuple[Image.Image, str, CaptureRegion]:
         """Capture specifically the currently active application window.

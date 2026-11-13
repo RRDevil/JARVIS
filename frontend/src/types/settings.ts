@@ -3,6 +3,7 @@
  */
 
 import { DeliveryProfile } from '../services/speechTiming';
+import { NarrationSettings, DEFAULT_NARRATION_SETTINGS } from './narration';
 
 export type ThemeAccent = 'cyan' | 'amber' | 'emerald' | 'crimson' | 'violet';
 
@@ -75,6 +76,7 @@ export interface VoiceSettings {
   deliveryProfile?: DeliveryProfile; // 'relaxed' | 'conversational' | 'formal'
   autoPlayback: boolean;
   sttModelSize?: string; // 'base.en' | 'tiny.en'
+  narration?: NarrationSettings;
 }
 
 export interface KeybindSettings {
@@ -116,6 +118,7 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   deliveryProfile: 'relaxed',
   autoPlayback: true,
   sttModelSize: 'base.en',
+  narration: DEFAULT_NARRATION_SETTINGS,
 };
 
 export const DEFAULT_SETTINGS: UserSettings = {
@@ -262,6 +265,10 @@ export function loadSettings(): UserSettings {
         rawVoice.sttModelSize === 'tiny.en' || rawVoice.sttModelSize === 'base.en'
           ? rawVoice.sttModelSize
           : DEFAULT_VOICE_SETTINGS.sttModelSize,
+      narration: {
+        ...DEFAULT_NARRATION_SETTINGS,
+        ...(rawVoice.narration && typeof rawVoice.narration === 'object' ? rawVoice.narration : {}),
+      },
     };
 
     // Validate keybinds

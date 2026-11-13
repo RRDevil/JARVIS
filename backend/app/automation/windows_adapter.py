@@ -59,6 +59,14 @@ MOUSEEVENTF_WHEEL = 0x0800
 MOUSEEVENTF_VIRTUALDESK = 0x4000
 MOUSEEVENTF_ABSOLUTE = 0x8000
 
+# Configure Win32 SendInput signature for 64-bit stability
+try:
+    _u32 = ctypes.windll.user32
+    _u32.SendInput.argtypes = [wintypes.UINT, ctypes.POINTER(INPUT), ctypes.c_int]
+    _u32.SendInput.restype = wintypes.UINT
+except Exception:
+    pass
+
 # Pre-approved application catalog
 DEFAULT_APPROVED_APPS: Dict[str, ApprovedApp] = {
     "notepad": ApprovedApp(
@@ -910,22 +918,41 @@ class WindowsPlatformAdapter(PlatformAdapter):
         user32 = ctypes.windll.user32
         import time
 
-        # 1. Activate target application window if specified
-        if target_hwnd is not None and not self._is_jarvis_window(target_hwnd):
+        # 1. Target window validation and focus verification
+        if target_hwnd is not None:
+            if self._is_jarvis_window(target_hwnd):
+                logger.warning(f"Refusing to type text into JARVIS HUD window {target_hwnd}.")
+                return False
+            if not user32.IsWindow(ctypes.c_void_p(target_hwnd)):
+                logger.warning(f"Target window handle {target_hwnd} is not a valid Win32 window.")
+                return False
+
             self.restore_and_focus_window(target_hwnd)
 
-        # 2. If coordinates are provided, click to establish keyboard/caret focus
+            # Strict Focus Verification: Ensure target window or its process owns foreground focus
+            fg = user32.GetForegroundWindow()
+            target_pid = ctypes.c_ulong()
+            user32.GetWindowThreadProcessId(ctypes.c_void_p(target_hwnd), ctypes.byref(target_pid))
+            fg_pid = ctypes.c_ulong()
+            user32.GetWindowThreadProcessId(ctypes.c_void_p(fg), ctypes.byref(fg_pid))
+
+            if fg != target_hwnd and fg_pid.value != target_pid.value:
+                logger.warning(
+                    f"Target window {target_hwnd} (PID {target_pid.value}) is not in foreground "
+                    f"(active FG: {fg}, PID {fg_pid.value}). Aborting text entry to prevent typing into the wrong window."
+                )
+                return False
+        else:
+            # Active foreground fallback check: Never type blindly into JARVIS UI
+            fg = user32.GetForegroundWindow()
+            if self._is_jarvis_window(fg):
+                logger.warning("Active foreground window is JARVIS HUD. Target application must be specified or focused.")
+                return False
+
+        # 2. If coordinates are provided, click to position caret/input focus
         if x is not None and y is not None:
             self.click_at(x, y, button="left", clicks=1, target_hwnd=target_hwnd)
             time.sleep(0.08)
-        elif target_hwnd is not None:
-            # If coordinates not given but window is known, click inside window client area to establish focus
-            bounds = self.get_window_bounds(target_hwnd)
-            if bounds and bounds["width"] > 20 and bounds["height"] > 20:
-                cx = bounds["left"] + bounds["width"] // 2
-                cy = bounds["top"] + bounds["height"] // 2
-                self.click_at(cx, cy, button="left", clicks=1, target_hwnd=target_hwnd)
-                time.sleep(0.08)
 
         # 3. Optionally select all and clear existing contents
         if clear_first:

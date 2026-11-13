@@ -19,6 +19,7 @@ class AppCategory(str, Enum):
 class ProviderType(str, Enum):
     DESKTOP_UI = "desktop_ui"
     OFFICE_COM = "office_com"
+    OFFICE_APPLESCRIPT = "office_applescript"
     BROWSER_AUTOMATION = "browser_automation"
     NATIVE_API = "native_api"
 

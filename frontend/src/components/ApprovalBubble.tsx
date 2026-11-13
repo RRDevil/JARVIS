@@ -142,6 +142,41 @@ export const ApprovalBubble: React.FC<ApprovalBubbleProps> = ({
         </div>
       )}
 
+      {/* Exact Text Entry Payload Verification */}
+      {request.parameters?.text !== undefined && (
+        <div
+          className="approval-text-payload-box"
+          style={{
+            background: 'rgba(0, 0, 0, 0.45)',
+            padding: '6px 10px',
+            borderRadius: '6px',
+            margin: '6px 0',
+            border: '1px solid rgba(56, 189, 248, 0.35)',
+          }}
+        >
+          <div style={{ fontSize: '0.72rem', color: '#38bdf8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }}>
+            <span>📝 Exact Text Payload ({String(request.parameters.text).length} chars):</span>
+          </div>
+          <div
+            style={{
+              fontFamily: 'monospace',
+              fontSize: '0.75rem',
+              color: '#f8fafc',
+              background: 'rgba(15, 23, 42, 0.75)',
+              padding: '6px 8px',
+              borderRadius: '4px',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-all',
+              maxHeight: '80px',
+              overflowY: 'auto',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+            }}
+          >
+            {request.parameters.text || <em style={{ color: '#94a3b8' }}>(empty string)</em>}
+          </div>
+        </div>
+      )}
+
       {/* Visual Grounded Target & Spatial Resolution Details */}
       <div className="approval-bubble-meta">
         Target Tool: <code>{request.toolName}</code>

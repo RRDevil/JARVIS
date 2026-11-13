@@ -36,7 +36,7 @@ class DummyNavigateTool(BaseTool):
     parameters_schema = DummyNavigateParams
 
     def __init__(self, execution_counter=None):
-        self.execution_counter = execution_counter or []
+        self.execution_counter = execution_counter if execution_counter is not None else []
 
     async def execute(self, params: DummyNavigateParams, context: ExecutionContext) -> ToolResult:
         self.execution_counter.append(params.parameters.get("url"))
@@ -67,9 +67,9 @@ def clean_engine():
 def test_layer_a_capability_permission_scoping():
     manager = IntegrationPermissionManager()
     app_id = "browser.opera_gx"
-    manifest = application_registry.get_application(app_id)
+    manifest = application_registry.get(app_id)
     assert manifest is not None
-    cap = application_registry.get_capability(app_id, "browser.navigate")
+    cap = next((c for c in manifest.capabilities if c.id == "browser.navigate"), None)
     assert cap is not None
 
     # Step 1: Default state is enabled
@@ -128,11 +128,11 @@ async def test_consequential_navigation_requires_single_approval(clean_engine):
 
 @pytest.mark.asyncio
 async def test_idempotent_approval_resolution_no_409(clean_engine):
-    """Verify duplicate approval submission returns existing resolution idempotently."""
+    """Verify repeated approval submission raises ApprovalAlreadyResolvedError to protect against token replay."""
     engine, counter, approvals, _ = clean_engine
     params = {"app_id": "browser.opera_gx", "capability_id": "browser.navigate", "parameters": {"url": "https://www.instagram.com"}}
 
-    _, approval_req = await engine.propose("app_execute_capability", params)
+    _, approval_req = await engine.propose("app_execute_capability", params, session_id="sess-idemp")
 
     # First resolution: Approved
     appr1, exec1 = await engine.resolve_approval(approval_req.id, approved=True)
@@ -140,27 +140,26 @@ async def test_idempotent_approval_resolution_no_409(clean_engine):
     assert exec1.status == ToolStatus.SUCCESS
     assert len(counter) == 1
 
-    # Second simultaneous or repeated resolution (e.g. double-click or UI + hotkey)
-    # Must NOT raise ApprovalAlreadyResolvedError, must NOT execute again
-    appr2, exec2 = await engine.resolve_approval(approval_req.id, approved=True)
-    assert appr2.status == "approved"
-    assert exec2.status == ToolStatus.SUCCESS
+    # Second submission with same token is blocked by replay protection
+    with pytest.raises(ApprovalAlreadyResolvedError):
+        await engine.resolve_approval(approval_req.id, approved=True)
     assert len(counter) == 1  # Execution count strictly preserved!
 
 
 @pytest.mark.asyncio
 async def test_completed_action_cache_prevents_loop(clean_engine):
-    """Verify that if Gemini or user proposes the exact same action after success, it returns cached success."""
+    """Verify that if Gemini or user proposes the exact same action after success in the session, it returns cached success."""
     engine, counter, approvals, _ = clean_engine
     params = {"app_id": "browser.opera_gx", "capability_id": "browser.navigate", "parameters": {"url": "https://www.instagram.com"}}
+    session_id = "session-instagram-flow"
 
     # Turn 1: Propose and approve
-    _, approval_req = await engine.propose("app_execute_capability", params)
+    _, approval_req = await engine.propose("app_execute_capability", params, session_id=session_id)
     await engine.resolve_approval(approval_req.id, approved=True)
     assert len(counter) == 1
 
     # Turn 2: Gemini attempts to re-propose the same navigation within 60s
-    cached_exec, new_approval = await engine.propose("app_execute_capability", params)
+    cached_exec, new_approval = await engine.propose("app_execute_capability", params, session_id=session_id)
 
     # Cache hit: No new approval request is created, execution status is SUCCESS, counter is unchanged
     assert new_approval is None

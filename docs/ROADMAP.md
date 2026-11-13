@@ -210,27 +210,39 @@ flowchart LR
 
 ---
 
-### Phase 6: Voice Pipeline & Multi-Step Task Planner
-- **Goal:** Hands-free voice conversation and multi-stage task execution.
+### Phase 6: Voice Pipeline & Goal-Oriented Task Planner (In Progress - Planner Foundation Completed)
+- **Goal:** Hands-free voice conversation, goal-oriented autonomous task planning, and multi-stage adaptive execution.
 - **Deliverables:**
   - Audio capture service with voice activity detection (VAD).
-  - Local or cloud speech-to-text (STT) and text-to-speech (TTS) with JARVIS voice modulation.
-  - Multi-step task planner with cancellation tokens and real-time step progress reporting in HUD.
+  - Local speech-to-text (STT) and persistent Piper neural text-to-speech (TTS) with full-response synthesis.
+  - Goal-oriented task planner (`TaskPlanningEngine`) with explicit dependency-linked step plans (`TaskPlan`, `PlanStep`).
+  - Autonomous goal deconstruction for complex multi-step objectives (document discovery/updating, messaging workflows, browser research).
+  - Adaptive problem solving & dynamic replanning upon step failure (browser failover, launch step insertion).
+  - Clarification policy engine (`ClarificationPolicyEngine`) establishing formal criteria for when questions are necessary vs when autonomous execution proceeds.
+  - Registered BaseTools: `plan_create` and `plan_get`.
 - **Acceptance Criteria:**
-  - Voice query triggers end-to-end response and speech output.
-  - User can cancel long-running multi-step tasks at any step via UI button or wake command.
+  - [x] Assistant independently plans multi-step objectives without requiring operator step-by-step dictation.
+  - [x] Failed actions trigger automated evaluation and replanning rather than repeating the same failed command.
+  - [x] Clarification engine suppresses redundant questions when context or preferences exist.
+  - [x] 212 backend pytest tests and 137 frontend tests passing.
 
 ---
 
-### Phase 7: Persistent Memory, Workflows, & Customization
-- **Goal:** User-controlled long-term memory and automated reusable workflows.
+### Phase 7: Persistent Memory, Workflows, & Customization (In Progress - Preference Memory Completed)
+- **Goal:** User-controlled long-term memory, workflow preferences, and automated reusable routines.
 - **Deliverables:**
-  - SQLite memory store for user facts, preferences, and system shortcuts.
-  - Explicit user memory management UI (view, edit, delete memories).
-  - Macro workflow builder (chain multiple tools into a single named routine).
+  - SQLite persistent memory store (`user_preferences` table, `PreferenceMemoryStore`).
+  - Structured preference model covering global defaults, website browsers, person communications, and workflow preferences.
+  - Strict 5-tier resolution priority hierarchy (Explicit Request > Person/Website > Workflow > Global Default > System Fallback).
+  - Distinction between explicit preferences, confirmed learned preferences, and inferred patterns with confirmation thresholding.
+  - Strict privacy enforcement: credentials, tokens, passwords, cookies, and private message contents are strictly prohibited from persistence (`MemoryPrivacyViolation`).
+  - Registered BaseTools: `preference_query` and `preference_store`.
+  - REST endpoints: `/api/v1/preferences` (list, create, resolve, delete, clear, settings).
 - **Acceptance Criteria:**
-  - Assistant recalls saved preferences across sessions.
-  - User can inspect and wipe stored memories on demand.
+  - [x] Assistant recalls saved preferences across sessions without repeatedly asking.
+  - [x] Global defaults never override more specific confirmed preferences.
+  - [x] Sensitive credentials and private communication bodies are blocked from storage.
+  - [x] User can inspect, edit, and delete preferences on demand.
 
 ---
 

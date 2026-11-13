@@ -23,6 +23,8 @@ import { streamChatCompletion, ChatMessagePayload } from './services/chatStream'
 import { soundManager } from './services/soundManager';
 import { voicePlayer, audioRecorder } from './services/voiceService';
 import { streamingVoice } from './services/streamingVoice';
+import { speechQueue } from './services/speechQueue';
+import { taskNarration } from './services/taskNarration';
 
 import { TopStatusBar } from './components/TopStatusBar';
 import { ArcReactor } from './components/ArcReactor';
@@ -125,6 +127,10 @@ export const App: React.FC = () => {
     },
   ]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const isStreamingRef = React.useRef(false);
+  useEffect(() => {
+    isStreamingRef.current = isStreaming;
+  }, [isStreaming]);
   const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequest[]>([]);
   const pendingApprovalsRef = React.useRef<ApprovalRequest[]>([]);
   useEffect(() => {
@@ -273,6 +279,13 @@ export const App: React.FC = () => {
         }
       }
 
+      // Spoken notification for newly registered approval requests
+      for (const req of list) {
+        if (!knownPendingApprovalsRef.current.has(req.id)) {
+          taskNarration.announceApprovalRequired(req.actionSummary || 'Action', req.id, settings.voice);
+        }
+      }
+
       const nextMap = new Map<string, string>();
       for (const req of list) {
         nextMap.set(req.id, req.expiresAt);
@@ -328,10 +341,34 @@ export const App: React.FC = () => {
     [logActivity]
   );
 
+  // Prioritized Speech Queue Synchronization
+  useEffect(() => {
+    speechQueue.setCallbacks({
+      onPlaybackStart: () => {
+        setIsSpeaking(true);
+      },
+      onPlaybackComplete: () => {
+        setIsSpeaking(false);
+        setAssistantState((prev) => {
+          if (pendingApprovalsRef.current.length > 0) return 'AWAITING_APPROVAL';
+          if (isStreamingRef.current) {
+            return prev === 'SPEAKING' ? 'EXECUTING' : prev;
+          }
+          return prev === 'SPEAKING' ? 'IDLE' : prev;
+        });
+      },
+      onError: (err) => {
+        setIsSpeaking(false);
+        logActivity('VOICE_ERROR', `Speech queue error: ${err?.message || err}`, 'WARNING');
+      },
+    });
+  }, [logActivity]);
+
   // Instant Speech Interruption Handler
   const handleStopSpeaking = useCallback(() => {
     voicePlayer.stop();
     streamingVoice.stop();
+    speechQueue.stopAll();
     setIsSpeaking(false);
     setAssistantState((prev) => (prev === 'SPEAKING' || (prev === 'THINKING' && !isStreaming) ? 'IDLE' : prev));
     logActivity('VOICE_STOPPED', 'Voice output halted by operator.', 'INFO');
@@ -399,6 +436,10 @@ export const App: React.FC = () => {
       setIsStreaming(true);
       setAssistantState('THINKING');
 
+      const taskId = `task-${Date.now()}`;
+      // Immediate proactive voice acknowledgment
+      taskNarration.acknowledgeTask(trimmed, taskId, settings.voice);
+
       const conversationHistory: ChatMessagePayload[] = [...messages, userMessage]
         .filter((m) => m.content.trim().length > 0)
         .slice(-15)
@@ -424,6 +465,9 @@ export const App: React.FC = () => {
             setIsSpeaking(false);
             setAssistantState((prev) => {
               if (pendingApprovalsRef.current.length > 0) return 'AWAITING_APPROVAL';
+              if (isStreamingRef.current) {
+                return prev === 'SPEAKING' ? 'EXECUTING' : prev;
+              }
               return (prev === 'SPEAKING' || prev === 'THINKING' || prev === 'RESPONDING' || prev === 'EXECUTING' ? 'IDLE' : prev);
             });
             logActivity('VOICE_OUTPUT', 'Full-response speech playback completed.', 'INFO');
@@ -473,6 +517,9 @@ export const App: React.FC = () => {
             } else {
               setAssistantState('EXECUTING');
             }
+          },
+          onNarration: (narrEvent) => {
+            taskNarration.handleLifecycleEvent(narrEvent, settings.voice);
           },
           onDelta: (delta) => {
             if (!firstTokenLogged) {
@@ -1059,6 +1106,9 @@ export const App: React.FC = () => {
                 );
               },
               onUsage: () => {},
+              onNarration: (narrEvent) => {
+                taskNarration.handleLifecycleEvent(narrEvent, settings.voice);
+              },
               onComplete: (fullText) => {
                 if (activePerceptionReqIdRef.current !== requestId) return;
                 setIsStreaming(false);
@@ -1145,6 +1195,7 @@ export const App: React.FC = () => {
       soundManager.play('ACTIVATION');
       try {
         const res = await respondToApproval(id, true);
+        taskNarration.announceApprovalDecision(true, id, settings.voice);
         logActivity('APPROVAL_DECISION', `Request #${id} approved by user.`, 'INFO');
         setPendingApprovals((prev) => prev.filter((r) => r.id !== id));
         setTimeout(pollApprovals, 400);
@@ -1190,6 +1241,7 @@ export const App: React.FC = () => {
       soundManager.play('ERROR_OCCURRED');
       try {
         const res = await respondToApproval(id, false);
+        taskNarration.announceApprovalDecision(false, id, settings.voice);
         logActivity('APPROVAL_DECISION', `Request #${id} rejected by user.`, 'WARNING');
         setPendingApprovals((prev) => prev.filter((r) => r.id !== id));
         setAssistantState('IDLE');

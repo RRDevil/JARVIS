@@ -5,6 +5,8 @@
  * parses Server-Sent Events, and reports metrics.
  */
 
+import { TaskLifecycleEvent } from '../types/narration';
+
 export interface ChatMessagePayload {
   role: 'user' | 'assistant' | 'system';
   content: string;
@@ -33,6 +35,7 @@ export interface StreamCallbacks {
   onError?: (errorCode: string, errorMessage: string) => void;
   onStageChange?: (stage: string, requestId?: string) => void;
   onToolCall?: (toolName: string, stage: string, toolStatus?: string) => void;
+  onNarration?: (event: TaskLifecycleEvent) => void;
 }
 
 export async function streamChatCompletion(
@@ -160,6 +163,12 @@ export async function streamChatCompletion(
                 data.stage || (eventType === 'tool_start' ? 'EXECUTING' : 'VERIFYING'),
                 data.tool_status
               );
+              break;
+
+            case 'narration':
+              if (data.narration || data.event_type) {
+                callbacks.onNarration?.(data.narration || data);
+              }
               break;
 
             case 'message_complete':

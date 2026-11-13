@@ -319,6 +319,12 @@ class UIDesktopTypeTextTool(BaseTool):
                 win = adapter.find_app_window(params.app_name)
                 if win:
                     target_hwnd = win.handle
+                else:
+                    return ToolResult(
+                        success=False,
+                        error=f"Target application '{params.app_name}' is not currently running. Please open it before typing.",
+                        error_code="APPLICATION_NOT_RUNNING",
+                    )
 
             ok = adapter.type_text(
                 text=params.text,

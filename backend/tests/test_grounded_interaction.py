@@ -301,4 +301,4 @@ def test_coordinate_click_and_desktop_typing_policy_evaluation():
     type_tool = UIDesktopTypeTextTool()
     eval_type = policy.evaluate(type_tool, {"app_name": "notepad", "text": "Testing 123"})
     assert eval_type.decision == PolicyDecision.REQUIRE_APPROVAL
-    assert "Type 11 characters into notepad" in eval_type.action_summary
+    assert 'Type "Testing 123" into notepad' in eval_type.action_summary

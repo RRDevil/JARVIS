@@ -9,6 +9,7 @@ ProviderEventType = Literal[
     "text_delta",
     "tool_start",
     "tool_result",
+    "narration",
     "message_complete",
     "usage",
     "error",
@@ -55,6 +56,7 @@ class ProviderEvent(BaseModel):
     tool_name: Optional[str] = None
     tool_status: Optional[str] = None
     turn_index: Optional[int] = None
+    narration: Optional[Dict[str, Any]] = None
     stage: Optional[str] = Field(
         default=None,
         description="Active perception or agent processing stage (e.g. ANALYZING_VISION, GENERATING).",

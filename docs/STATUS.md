@@ -1,13 +1,42 @@
 # JARVIS Desktop Assistant: Project Status
 
-## Current Phase: Phase 5.3 (Visual Target Resolution & Reliable Clicking Redesign) — Completed
+## Current Phase: Advanced Reasoning, Adaptive Planning, User Preference Memory & Visual Perception Reliability — Completed
 
 ### Status Summary
-- **Phase Status:** Visual Target Resolution & Reliable Clicking Redesign Complete and Formally Verified.
-- **Repository State:** Real Windows 11 desktop assistant featuring a dedicated Pre-Approval Visual Target Resolution Pipeline (`backend/app/perception/target_resolver.py`), concrete spatial coordinate binding in security approvals, resilient dual-channel mouse click execution (`windows_adapter.py`), target invalidation guards, post-click interaction verification, and enhanced HUD approval cards displaying target application, exact coordinates `(x, y)`, bounding boxes, and detection method badges. In addition, the Modular Application Integration Framework spans Browsers (Opera GX, Google Chrome), Microsoft Office (Word, Excel, PowerPoint, Outlook, OneNote, Access, Publisher), and Messaging (Discord, WhatsApp, Instagram). Upstream capacity spike (503/429) fallback architecture features real-time candidate model failovers (`gemini-3.5-flash-lite`, `gemini-3-flash-preview`, `gemini-3.1-flash-lite`), recursive schema sanitization, offline local automation execution, in-character standby responses, and frontend service notice recovery.
-- **Backend Service:** FastAPI with SQLite persistence, health diagnostics (`GET /api/health`), SSE chat streaming (`POST /api/v1/chat/stream`), multi-monitor querying (`GET /api/v1/screen/monitors`), on-demand screen inspection (`POST /api/v1/screen/inspect`), on-device OCR (`POST /api/v1/screen/ocr`), UI element grounding (`POST /api/v1/screen/elements/locate`), target resolver (`target_resolver.resolve_target`), bounded screen recording, application integration catalog and discovery, tool registry with direct screen clicking (`visual_click_element`), universal text typing (`desktop_type_text`, `visual_type_into_element`), core integration tools (`app_discover`, `app_list_capabilities`, `app_execute_capability`), approvals gateway with rejection conversation messaging and global active approval shortcut resolution (`GET /api/v1/approvals/pending`, `GET /api/v1/approvals/active`, `POST /api/v1/approvals/active/respond`, `POST /api/v1/approvals/{id}/respond`), and audit log query endpoints (`GET /api/v1/audit/logs`) active on loopback (`127.0.0.1:8000`). 176 backend pytest tests passing with 0 errors.
-- **Frontend Service:** React 19 + TypeScript + Vite with dual-mode compact floating orb, quick command bar with inline approval bubbles displaying concrete resolved target names, applications, coordinates `(x, y)`, bounding boxes, and detection badges, Screen Perception Modal with interactive UI element grounding viewer, Application Manager Modal, expanded glass HUD, full diagnostics dashboard, 122 unit/integration tests passing (Vitest), and 0 TypeScript errors.
+- **Phase Status:** Goal-Oriented Planning, Persistent Preference Memory, and Semantic Interface Perception Complete and Formally Verified.
+- **Repository State:** Real Windows 11 desktop assistant featuring goal-oriented task planning (`backend/app/planning/planner.py`), persistent SQLite user preference and workflow memory (`backend/app/memory/store.py`, `service.py`) with a strict 5-tier resolution hierarchy, structured semantic perception (`backend/app/perception/semantic/`) isolating Instagram Notes from genuine conversations, dedicated Pre-Approval Visual Target Resolution Pipeline (`backend/app/perception/target_resolver.py`), concrete spatial coordinate binding in security approvals, resilient dual-channel mouse click execution (`windows_adapter.py`), target invalidation guards, post-click interaction verification, and enhanced HUD approval cards. In addition, the Modular Application Integration Framework spans Browsers (Opera GX, Google Chrome), Microsoft Office (Word, Excel, PowerPoint, Outlook, OneNote, Access, Publisher), and Messaging (Discord, WhatsApp, Instagram). Upstream capacity spike (503/429) fallback architecture features real-time candidate model failovers (`gemini-3.5-flash-lite`, `gemini-3-flash-preview`, `gemini-3.1-flash-lite`), recursive schema sanitization, offline local automation execution, in-character standby responses, and frontend service notice recovery.
+- **Backend Service:** FastAPI with SQLite persistence, health diagnostics (`GET /api/health`), SSE chat streaming (`POST /api/v1/chat/stream`), preferences API (`/api/v1/preferences`), plans API (`/api/v1/plans`), multi-monitor querying (`GET /api/v1/screen/monitors`), on-demand screen inspection (`POST /api/v1/screen/inspect`), on-device OCR (`POST /api/v1/screen/ocr`), UI element grounding (`POST /api/v1/screen/elements/locate`), target resolver (`target_resolver.resolve_target`), semantic conversation inspection (`semantic_read_conversations`), application integration catalog and discovery, tool registry with direct screen clicking (`visual_click_element`), universal text typing (`desktop_type_text`, `visual_type_into_element`), core integration tools (`app_discover`, `app_list_capabilities`, `app_execute_capability`), preference tools (`preference_query`, `preference_store`), task planning tools (`plan_create`, `plan_get`), approvals gateway with rejection conversation messaging and global active approval shortcut resolution, and audit log query endpoints (`GET /api/v1/audit/logs`) active on loopback (`127.0.0.1:8000`). 212 backend pytest tests passing with 0 errors.
+- **Frontend Service:** React 19 + TypeScript + Vite with dual-mode compact floating orb, quick command bar with inline approval bubbles displaying concrete resolved target names, applications, coordinates `(x, y)`, bounding boxes, and detection badges, Screen Perception Modal with interactive UI element grounding viewer, Application Manager Modal, expanded glass HUD, full diagnostics dashboard, 137 unit/integration tests passing (Vitest), and 0 TypeScript errors.
 - **Desktop Shell Host:** Native Windows WebView2 desktop shell (`scripts/desktop_app.py`) with frameless transparency, system tray, and registered global hotkeys (`Alt + Space`, `Ctrl + Shift + J`, dedicated mic keys, `Ctrl + Alt + Y` for Approve, `Ctrl + Alt + N` for Deny).
+
+---
+
+## Advanced Reasoning, Memory & Semantic Perception Checklist
+
+- [x] **1. Semantic Interface Perception & Instagram Conversation Isolation:**
+  - Implemented `backend/app/perception/semantic/instagram.py` and `generic.py` with `SemanticPerceptionEngine`.
+  - Solved root cause of Instagram misidentification: Notes and their authors (in top horizontal tray) are strictly isolated and prevented from entering conversation candidates.
+  - Formulates genuine conversation rows requiring both contact name and last message preview or activity status.
+  - Distinguishes currently open conversation thread (right pane) from inbox list and suggested contacts.
+  - Registered `semantic_read_conversations` BaseTool and upgraded `DesktopUIProvider` message reading.
+- [x] **2. Goal-Oriented Reasoning & Autonomous Task Planning (Phase 6 Foundation):**
+  - Implemented `backend/app/planning/planner.py` with `TaskPlan` and `PlanStep` models.
+  - Autonomous goal decomposition for messaging objectives, document update workflows, and research queries without requiring step-by-step user commands.
+  - Step verification criteria and dependency tracking.
+  - Adaptive problem solving & dynamic replanning upon step failure (browser failover, application launch insertion).
+  - Clarification policy engine (`ClarificationPolicyEngine`) defining strict rules on when questions are necessary vs when autonomous execution proceeds.
+  - Registered `plan_create` and `plan_get` BaseTools and `/api/v1/plans` REST endpoints.
+- [x] **3. Persistent User Preference and Workflow Memory (Phase 7 Foundation):**
+  - Implemented `backend/app/memory/store.py` and `service.py` backed by SQLite `user_preferences` table.
+  - Structured preference categories: global defaults, website browsers, person communications, workflow preferences, application profiles.
+  - Enforced 5-tier resolution priority hierarchy: 1. Explicit request > 2. Person/Website > 3. Workflow > 4. Global default > 5. System fallback.
+  - Distinguishes explicit, confirmed learned, and inferred preferences with confirmation thresholding.
+  - Strict privacy enforcement: credentials, tokens, passwords, cookies, and private message contents are strictly prohibited from persistence (`MemoryPrivacyViolation`).
+  - Registered `preference_query` and `preference_store` BaseTools and `/api/v1/preferences` REST endpoints.
+- [x] **4. Full Automated Test Verification:**
+  - 212 backend pytest tests passing (100% pass rate).
+  - 137 frontend vitest tests passing (100% pass rate).
+  - Zero regressions across existing tools, approvals, and automation adapters.
 
 ---
 

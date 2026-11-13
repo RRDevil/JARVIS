@@ -12,8 +12,10 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
 import psutil
+import sys
 
 from app.automation.factory import get_platform_adapter
+from app.integrations.base import AppDiscoveryProvider
 from app.integrations.models import (
     ApplicationManifest,
     IntegrationHealth,
@@ -31,8 +33,8 @@ except ImportError:
     HAS_WINREG = False
 
 
-class ApplicationDiscoveryEngine:
-    """Safe, non-invasive discovery of installed and running Windows applications."""
+class ApplicationDiscoveryEngine(AppDiscoveryProvider):
+    """Safe, non-invasive discovery of installed and running applications across platforms."""
 
     def __init__(self, registry=application_registry):
         self.registry = registry
@@ -94,9 +96,56 @@ class ApplicationDiscoveryEngine:
 
         return paths
 
+    def _scan_macos_applications(self) -> Dict[str, str]:
+        """Scan macOS application directories for .app bundles."""
+        paths: Dict[str, str] = {}
+        for search_dir in ["/Applications", "/System/Applications", os.path.expanduser("~/Applications")]:
+            p = Path(search_dir)
+            if not p.exists():
+                continue
+            try:
+                for item in p.glob("*.app"):
+                    name = item.stem.lower()
+                    paths[name] = str(item.resolve())
+            except Exception:
+                continue
+        return paths
+
+    def scan_installed_applications(self) -> Dict[str, str]:
+        """Fulfill AppDiscoveryProvider contract."""
+        if sys.platform == "darwin":
+            return self._scan_macos_applications()
+        return self._query_registry_app_paths()
+
+    def resolve_app_path(self, app_name: str) -> Optional[str]:
+        """Resolve application executable or bundle path."""
+        lower_name = app_name.lower()
+        if sys.platform == "darwin":
+            mac_paths = self._scan_macos_applications()
+            if lower_name in mac_paths:
+                return mac_paths[lower_name]
+            for name, path in mac_paths.items():
+                if lower_name in name:
+                    return path
+            return None
+
+        # Windows
+        if not self._cached_app_paths:
+            self._cached_app_paths = self._query_registry_app_paths()
+        for key, path in self._cached_app_paths.items():
+            if lower_name in key:
+                return path
+        return None
+
     def _resolve_executable_path(self, manifest: ApplicationManifest, app_paths: Dict[str, str]) -> Optional[str]:
         """Locate verified physical binary on the host filesystem."""
         rule = manifest.process_rule
+
+        # Check macOS bundle matching
+        if sys.platform == "darwin":
+            for name, bundle_path in app_paths.items():
+                if manifest.app_id.lower() in name or manifest.display_name.lower() in name:
+                    return bundle_path
 
         # Check App Paths registry keys first
         for key_name in rule.registry_app_paths_keys:
@@ -121,7 +170,10 @@ class ApplicationDiscoveryEngine:
     def scan_installed(self) -> List[ApplicationManifest]:
         """Scan system registries and filesystem to detect installed applications."""
         with self._lock:
-            app_paths = self._query_registry_app_paths()
+            if sys.platform == "darwin":
+                app_paths = self._scan_macos_applications()
+            else:
+                app_paths = self._query_registry_app_paths()
             self._cached_app_paths = app_paths
             manifests = self.registry.list_all()
 
