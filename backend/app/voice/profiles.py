@@ -358,6 +358,22 @@ class VoiceProfileManager:
             if profile_id in self._profiles:
                 raise ValueError(f"Profile ID '{profile_id}' already exists.")
 
+            # Validate consent for custom / cloned voice models
+            if create_data.metadata.get("is_custom_voice") or create_data.metadata.get("cloned"):
+                if not create_data.owner_consent_confirmed:
+                    raise ValueError(
+                        "Explicit authorization and consent from the voice owner is required "
+                        "before creating a custom voice profile."
+                    )
+
+            meta = dict(create_data.metadata or {})
+            now_iso = datetime.now(timezone.utc).isoformat()
+            consent_ts = now_iso if create_data.owner_consent_confirmed else None
+            if create_data.owner_consent_confirmed:
+                meta["owner_consent_confirmed"] = True
+                meta["consent_recorded_at"] = now_iso
+                meta["consent_method"] = "explicit_user_checkbox_acknowledgment"
+
             new_profile = VoiceProfile(
                 id=profile_id,
                 name=create_data.name,
@@ -371,11 +387,13 @@ class VoiceProfileManager:
                 is_favorite=create_data.is_favorite,
                 is_default=False,
                 is_fallback=False,
-                metadata=create_data.metadata,
+                consent_timestamp=consent_ts,
+                created_by=create_data.created_by or "operator",
+                metadata=meta,
             )
             self._profiles[profile_id] = new_profile
             self._save_to_db()
-            logger.info(f"Created voice profile '{profile_id}' ({new_profile.name})")
+            logger.info(f"Created voice profile '{profile_id}' ({new_profile.name}) with consent tracking")
             return new_profile
 
     def update_profile(self, profile_id: str, update_data: VoiceProfileUpdate) -> VoiceProfile:
@@ -398,7 +416,7 @@ class VoiceProfileManager:
             logger.info(f"Updated voice profile '{profile_id}'")
             return profile
 
-    def delete_profile(self, profile_id: str) -> None:
+    def delete_profile(self, profile_id: str, delete_custom_files: bool = False) -> None:
         """Delete an existing voice profile. Protects fallback profile from deletion."""
         with self._lock:
             profile = self._profiles.get(profile_id)
@@ -407,6 +425,20 @@ class VoiceProfileManager:
 
             if profile.is_fallback:
                 raise ValueError(f"Cannot delete designated fallback voice profile '{profile_id}'.")
+
+            # Clean up on-disk custom model files if requested and safe
+            if delete_custom_files:
+                for file_key in ("custom_weights_path", "cloned_reference_path", "rvc_model"):
+                    fpath = profile.metadata.get(file_key)
+                    if fpath and os.path.exists(fpath):
+                        norm = os.path.normpath(fpath).lower()
+                        # Strict protection: never delete baseline models or readme
+                        if not any(prot in norm for prot in ("jarvis-default", "lessac", "readme.md")):
+                            try:
+                                os.remove(fpath)
+                                logger.info(f"Cleaned up associated custom model file: {fpath}")
+                            except Exception as e:
+                                logger.warning(f"Could not remove custom model file '{fpath}': {e}")
 
             del self._profiles[profile_id]
 

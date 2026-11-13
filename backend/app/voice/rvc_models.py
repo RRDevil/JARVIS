@@ -109,13 +109,21 @@ def scan_rvc_models() -> List[RVCModelInfo]:
 
 
 def get_rvc_model(model_id_or_path: str) -> Optional[RVCModelInfo]:
-    """Lookup an RVC model by its ID or file path."""
+    """Lookup an RVC model by its ID, character name, filename stem, or file path."""
     models = scan_rvc_models()
+    target_clean = model_id_or_path.lower().replace("rvc-", "").replace("_", "-").replace(" ", "-")
     for m in models:
         if m.id == model_id_or_path or m.model_path == model_id_or_path:
             return m
-        # Also check without 'rvc-' prefix
-        if m.id.replace("rvc-", "") == model_id_or_path.replace("rvc-", ""):
+        m_clean = m.id.lower().replace("rvc-", "").replace("_", "-").replace(" ", "-")
+        if m_clean == target_clean:
+            return m
+        if Path(m.model_path).stem.lower() == Path(model_id_or_path).stem.lower():
+            return m
+    # Partial substring fallback
+    for m in models:
+        m_clean = m.id.lower().replace("rvc-", "").replace("_", "-").replace(" ", "-")
+        if target_clean in m_clean or m_clean in target_clean:
             return m
     return None
 

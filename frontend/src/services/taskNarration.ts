@@ -171,7 +171,7 @@ export class TaskNarrationCoordinator {
       priority,
       event.task_id,
       voiceSettings,
-      { eventType: event.event_type },
+      { eventType: event.event_type, context: event.progress_info?.context },
       {
         eventId,
         approvalId: event.approval_id || undefined,

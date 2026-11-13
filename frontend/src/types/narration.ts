@@ -24,7 +24,8 @@ export enum NarrationPriority {
   APPROVAL = 2,        // Approval requests and operator decisions
   ACKNOWLEDGMENT = 3,  // Immediate task receipt acknowledgment
   PROGRESS = 4,        // Intermediate execution milestones
-  FINAL_RESPONSE = 5,  // Conversational final responses
+  PREVIEW = 5,         // Voice preview / testing in settings
+  FINAL_RESPONSE = 6,  // Conversational final responses
 }
 
 export interface TaskLifecycleEvent {

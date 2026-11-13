@@ -37,9 +37,21 @@ class PiperWorkerClient:
         return self._proc is not None and self._proc.returncode is None
 
     async def _ensure_worker(self, runner_py: Optional[str] = None) -> None:
-        """Starts the worker process if it is not currently running."""
-        if self.is_running:
-            return
+        """Starts the worker process if it is not currently running, or recycles if loop changed."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if self._proc is not None:
+            # If the process is tied to an expired/different event loop, recycle it cleanly
+            if getattr(self, "_loop", None) != loop:
+                logger.info("Event loop changed or reset; recycling persistent Piper worker.")
+                await self._stop_internal()
+            elif self.is_running:
+                return
+
+        self._loop = loop
 
         py_exe = runner_py or str(VOICE_PYTHON_EXE if VOICE_PYTHON_EXE.exists() else sys.executable)
         logger.info(f"Spawning persistent Piper TTS worker: {py_exe} {WORKER_SCRIPT}")
@@ -73,11 +85,14 @@ class PiperWorkerClient:
             self._idle_task.cancel()
             self._idle_task = None
 
-        loop = asyncio.get_event_loop()
-        self._idle_task = loop.call_later(
-            IDLE_TIMEOUT_SECONDS,
-            lambda: asyncio.create_task(self._on_idle_timeout()),
-        )
+        try:
+            loop = getattr(self, "_loop", None) or asyncio.get_running_loop()
+            self._idle_task = loop.call_later(
+                IDLE_TIMEOUT_SECONDS,
+                lambda: asyncio.create_task(self._on_idle_timeout()),
+            )
+        except Exception:
+            pass
 
     async def _on_idle_timeout(self) -> None:
         """Shuts down worker after prolonged inactivity to free memory."""

@@ -47,6 +47,9 @@ def sanitize_error_message(err_str: str) -> str:
 class GeminiProvider(BaseAIProvider):
     """Google Gemini AI Provider using the official google-genai Python SDK."""
 
+    # Class-level session contents cache preserving thought-signatures and multi-turn tool history across HTTP turns
+    _session_contents: Dict[str, List[Any]] = {}
+
     def __init__(
         self,
         api_key: Optional[str] = None,
@@ -58,6 +61,7 @@ class GeminiProvider(BaseAIProvider):
         self.timeout_seconds = timeout_seconds if timeout_seconds is not None else settings.AI_REQUEST_TIMEOUT_SECONDS
         self._client: Optional[genai.Client] = None
         self._cached_client_key: Optional[str] = None
+        self._session_contents = GeminiProvider._session_contents
 
     @property
     def api_key(self) -> str:
@@ -190,31 +194,88 @@ class GeminiProvider(BaseAIProvider):
         system_instruction: str = settings.AI_SYSTEM_INSTRUCTION
         contents: List[types.Content] = []
 
-        for msg in messages:
-            if msg.role == "system":
-                # Augment system instruction
-                system_instruction = f"{system_instruction}\n{msg.content}"
-            else:
-                # Map role: 'user' -> 'user', 'assistant' -> 'model'
-                genai_role = "user" if msg.role == "user" else "model"
-                parts = [types.Part.from_text(text=msg.content)]
-                if getattr(msg, "image_data", None):
-                    try:
-                        raw_bytes = base64.b64decode(msg.image_data)
-                        parts.append(
-                            types.Part.from_bytes(
-                                data=raw_bytes,
-                                mime_type=getattr(msg, "image_mime_type", None) or "image/png",
+        # Check if this request is a continuation of an approved action in this session
+        is_approval_continuation = False
+        last_msg_content = messages[-1].content if messages else ""
+        continuation_markers = [
+            "[SYSTEM NOTIFICATION:",
+            "[APPROVAL DECISION:",
+            "operator approved and executed",
+            "approved and executed",
+        ]
+        if session_id in self._session_contents and any(m in last_msg_content for m in continuation_markers):
+            is_approval_continuation = True
+
+        if is_approval_continuation:
+            # Restore previous session contents preserving native candidate_parts and thought_signatures
+            cached_contents = self._session_contents.pop(session_id, [])
+            if cached_contents:
+                contents = cached_contents
+                # In the last turn (user turn with tool responses), update requires_approval to success
+                if contents and contents[-1].role == "user" and contents[-1].parts:
+                    updated_parts = []
+                    for p in contents[-1].parts:
+                        if getattr(p, "function_response", None):
+                            fr = p.function_response
+                            resp_dict = dict(getattr(fr, "response", {}) or {})
+                            res_val = resp_dict.get("result", {})
+                            if isinstance(res_val, dict) and res_val.get("status") == "requires_approval":
+                                updated_parts.append(
+                                    types.Part.from_function_response(
+                                        name=fr.name,
+                                        response={
+                                            "result": {
+                                                "status": "success",
+                                                "result": "The desktop action was approved by operator and successfully executed.",
+                                            }
+                                        },
+                                    )
+                                )
+                            else:
+                                updated_parts.append(p)
+                        else:
+                            updated_parts.append(p)
+
+                    # Append instruction to proceed with remaining steps
+                    updated_parts.append(
+                        types.Part.from_text(
+                            text=(
+                                "The operator approved and executed the proposed desktop action with status: SUCCESS. "
+                                "Do NOT re-execute or repeat this action. "
+                                "Now immediately proceed to the next step of the user's objective (e.g. read the page, inspect the window, or provide the requested answer)."
                             )
                         )
-                    except Exception:
-                        pass
-                contents.append(
-                    types.Content(
-                        role=genai_role,
-                        parts=parts,
                     )
-                )
+                    contents[-1] = types.Content(role="user", parts=updated_parts)
+
+        if not contents:
+            # Clean turn: discard any old session contents and rebuild from messages
+            self._session_contents.pop(session_id, None)
+            for msg in messages:
+                if msg.role == "system":
+                    # Augment system instruction
+                    system_instruction = f"{system_instruction}\n{msg.content}"
+                else:
+                    # Map role: 'user' -> 'user', 'assistant' -> 'model'
+                    genai_role = "user" if msg.role == "user" else "model"
+                    parts = [types.Part.from_text(text=msg.content)]
+                    if getattr(msg, "image_data", None):
+                        try:
+                            raw_bytes = base64.b64decode(msg.image_data)
+                            parts.append(
+                                types.Part.from_bytes(
+                                    data=raw_bytes,
+                                    mime_type=getattr(msg, "image_mime_type", None) or "image/png",
+                                )
+                            )
+                        except Exception:
+                            pass
+                    contents.append(
+                        types.Content(
+                            role=genai_role,
+                            parts=parts,
+                        )
+                    )
 
         tools = self._build_tools()
 
@@ -405,6 +466,17 @@ class GeminiProvider(BaseAIProvider):
                                         "approval_id": approval.id,
                                         "action_summary": approval.actionSummary,
                                     }
+                                    # Ensure an in-character explanation is provided so the conversational bubble is never empty
+                                    if not accumulated_text:
+                                        expl_text = f"I require your authorization to execute: {approval.actionSummary}. Please confirm above."
+                                        accumulated_text.append(expl_text)
+                                        yield ProviderEvent(
+                                            event_type="text_delta",
+                                            request_id=request_id,
+                                            session_id=session_id,
+                                            delta=expl_text,
+                                            stage="AWAITING_APPROVAL",
+                                        )
                                     yield ProviderEvent(
                                         event_type="tool_result",
                                         request_id=request_id,
@@ -506,10 +578,15 @@ class GeminiProvider(BaseAIProvider):
 
                             # Break agent orchestration loop immediately if human operator approval is pending
                             if has_pending_approval:
+                                self._session_contents[session_id] = list(contents)
                                 break
 
                         # Update active model to the successfully verified model
                         self.model = current_model
+                        if has_pending_approval:
+                            self._session_contents[session_id] = list(contents)
+                        else:
+                            self._session_contents.pop(session_id, None)
                         break
 
                     except Exception as model_err:
@@ -549,6 +626,11 @@ class GeminiProvider(BaseAIProvider):
             # 4. Emit message_complete event and completion narration
             total_duration_ms = round((time.time() - start_time) * 1000, 2)
             full_text = "".join(accumulated_text)
+            if not full_text.strip():
+                if has_pending_approval:
+                    full_text = "I have prepared this action for you. Please authorize the request above to proceed."
+                else:
+                    full_text = "Task completed successfully."
 
             narr_done = task_narration_engine.generate_completion(
                 task_id=request_id,

@@ -581,3 +581,90 @@ async def test_sse_unexpected_connection_close():
         assert "Remote host closed active TCP connection" in (events[1].error_message or "")
 
 
+@pytest.mark.asyncio
+async def test_multi_step_approval_continuation_preserves_session_and_proceeds():
+    """Verify that when a tool requires approval, the session is preserved with native candidate parts,
+    and upon operator approval continuation, the turn proceeds seamlessly to subsequent steps.
+    """
+    provider = GeminiProvider(api_key="test-api-key", model="gemini-3.5-flash-lite")
+    session_id = "test-multi-step-continuation-session"
+
+    # Turn 1: Model proposes a consequential tool requiring approval (e.g. app_execute_capability)
+    call_nav = MagicMock()
+    call_nav.name = "app_execute_capability"
+    call_nav.args = {"app_id": "browser.opera_gx", "capability_id": "browser.navigate", "parameters": {"query": "snakes of Nepal"}}
+
+    part_nav = MagicMock()
+    part_nav.function_call = call_nav
+    part_nav.text = None
+
+    chunk_turn1 = MagicMock()
+    chunk_turn1.text = ""
+    chunk_turn1.function_calls = [call_nav]
+    chunk_turn1.usage_metadata = None
+    chunk_turn1.candidates = [MagicMock(content=MagicMock(parts=[part_nav]))]
+
+    # Turn 2 (after continuation): Model calls browser.read_page then finishes
+    part_finish = MagicMock()
+    part_finish.function_call = None
+    part_finish.text = "Nepal is home to diverse snake species including the King Cobra and Himalayan Pit Viper."
+
+    chunk_turn2 = MagicMock()
+    chunk_turn2.text = "Nepal is home to diverse snake species including the King Cobra and Himalayan Pit Viper."
+    chunk_turn2.function_calls = None
+    chunk_turn2.usage_metadata = None
+    chunk_turn2.candidates = [MagicMock(content=MagicMock(parts=[part_finish]))]
+
+    async def stream_turn1():
+        yield chunk_turn1
+
+    async def stream_turn2():
+        yield chunk_turn2
+
+    mock_client = MagicMock()
+    mock_client.aio.models.generate_content_stream = AsyncMock(side_effect=[stream_turn1(), stream_turn2()])
+
+    with patch.object(provider, "_get_client", return_value=mock_client):
+        # 1. Execute Turn 1
+        t1_events = []
+        async for evt in provider.stream_chat(
+            messages=[ChatContextMessage(role="user", content="can you open a new tab in opera and find me an article about species of snakes found in Nepal")],
+            session_id=session_id,
+            request_id="req-turn-1",
+        ):
+            t1_events.append(evt)
+
+        # Verify Turn 1 ended in AWAITING_APPROVAL with non-empty text delta and stored session contents
+        complete_evt = next(e for e in t1_events if e.event_type == "message_complete")
+        assert complete_evt.stage == "AWAITING_APPROVAL"
+        assert complete_evt.full_text is not None and len(complete_evt.full_text) > 0
+        assert "authorization" in complete_evt.full_text.lower() or "action" in complete_evt.full_text.lower()
+        assert session_id in provider._session_contents
+
+        # 2. Operator approves: send continuation prompt
+        continuation_prompt = (
+            "[SYSTEM NOTIFICATION: The operator approved and executed 'Navigate in Opera GX'. "
+            "Execution completed with status: SUCCESS. The desktop action has already been performed. "
+            "Do NOT re-execute or re-propose 'app_execute_capability'. Proceed with the next step.]"
+        )
+
+        t2_events = []
+        async for evt in provider.stream_chat(
+            messages=[
+                ChatContextMessage(role="user", content="can you open a new tab in opera and find me an article about species of snakes found in Nepal"),
+                ChatContextMessage(role="user", content=continuation_prompt),
+            ],
+            session_id=session_id,
+            request_id="req-turn-2",
+        ):
+            t2_events.append(evt)
+
+        # Verify Turn 2 completed successfully and generated the final synthesized response
+        t2_complete = next(e for e in t2_events if e.event_type == "message_complete")
+        assert t2_complete.stage == "COMPLETED"
+        assert "Nepal is home to diverse snake species" in t2_complete.full_text
+        # Verify session contents were cleaned up on successful task completion
+        assert session_id not in provider._session_contents
+
+
+

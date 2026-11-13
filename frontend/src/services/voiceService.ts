@@ -1,6 +1,8 @@
 import { VoiceSettings } from '../types/settings';
 import { synthesizeSpeech } from './api';
 import { normalizeTextForSpeech } from './textNormalizer';
+import { speechQueue } from './speechQueue';
+import { NarrationPriority } from '../types/narration';
 
 /**
  * Strips code blocks, markdown formatting, technical markdown tokens,
@@ -151,103 +153,63 @@ export class AudioRecorder {
  * Enforces single-stream audio playback with instant interruption.
  */
 export class VoicePlayer {
-  private currentAudio: HTMLAudioElement | null = null;
-  private currentOnEnded: (() => void) | null = null;
   private isCurrentlyPlaying = false;
   private currentPlayId = 0;
 
   public isPlaying(): boolean {
-    return this.isCurrentlyPlaying;
+    return this.isCurrentlyPlaying || speechQueue.isSpeaking();
   }
 
   public async playBase64Wav(
     base64Wav: string,
     options: {
       volume?: number;
+      priority?: NarrationPriority;
+      taskId?: string;
       onStart?: () => void;
       onEnded?: () => void;
       onError?: (err: any) => void;
     } = {}
   ): Promise<void> {
-    // Interrupt and halt any existing audio stream immediately
-    this.stop();
-
     if (!base64Wav) {
       options.onEnded?.();
       return;
     }
 
-    const audioUrl = `data:audio/wav;base64,${base64Wav}`;
-    const audio = new Audio(audioUrl);
-    this.currentAudio = audio;
-    this.currentOnEnded = options.onEnded || null;
+    const priority = options.priority ?? NarrationPriority.PREVIEW;
+    const taskId = options.taskId || 'preview-session';
+
     this.isCurrentlyPlaying = true;
-
-    // Apply volume (0.0 to 1.0)
-    const volumeLevel = typeof options.volume === 'number' ? Math.max(0, Math.min(100, options.volume)) / 100 : 1.0;
-    audio.volume = volumeLevel;
-
-    let startTriggered = false;
-    const triggerStart = () => {
-      if (!startTriggered) {
-        startTriggered = true;
-        this.isCurrentlyPlaying = true;
-        options.onStart?.();
+    await speechQueue.enqueuePreSynthesized(
+      base64Wav,
+      priority === NarrationPriority.PREVIEW ? 'Voice Preview' : 'Spoken Audio',
+      priority,
+      taskId,
+      { volume: options.volume ?? 100 } as any,
+      {
+        onStart: () => {
+          this.isCurrentlyPlaying = true;
+          options.onStart?.();
+        },
+        onComplete: () => {
+          this.isCurrentlyPlaying = false;
+          options.onEnded?.();
+        },
+        onError: (err) => {
+          this.isCurrentlyPlaying = false;
+          options.onError?.(err);
+        },
       }
-    };
-
-    audio.onplay = () => {
-      triggerStart();
-    };
-
-    audio.onended = () => {
-      this.isCurrentlyPlaying = false;
-      this.currentAudio = null;
-      const callback = this.currentOnEnded;
-      this.currentOnEnded = null;
-      callback?.();
-    };
-
-    audio.onerror = (e) => {
-      this.isCurrentlyPlaying = false;
-      this.currentAudio = null;
-      this.currentOnEnded = null;
-      options.onError?.(e);
-    };
-
-    try {
-      await audio.play();
-      triggerStart();
-    } catch (err) {
-      this.isCurrentlyPlaying = false;
-      this.currentAudio = null;
-      this.currentOnEnded = null;
-      options.onError?.(err);
-    }
+    );
   }
 
   /**
    * Immediately halts current speech playback.
    */
   public stop(): void {
-    this.currentPlayId++;
-    if (this.currentAudio) {
-      try {
-        this.currentAudio.pause();
-        this.currentAudio.currentTime = 0;
-        this.currentAudio.src = '';
-      } catch {
-        // ignore
-      }
-      this.currentAudio = null;
-    }
-
-    if (this.isCurrentlyPlaying) {
-      this.isCurrentlyPlaying = false;
-      const callback = this.currentOnEnded;
-      this.currentOnEnded = null;
-      callback?.();
-    }
+    speechQueue.cancelTask('preview-session');
+    speechQueue.cancelTask('conversational-response');
+    this.isCurrentlyPlaying = false;
   }
 
   /**
@@ -291,6 +253,8 @@ export class VoicePlayer {
 
       await this.playBase64Wav(response.audio_base64, {
         volume: settings.volume,
+        priority: NarrationPriority.FINAL_RESPONSE,
+        taskId: 'conversational-response',
         onStart: callbacks.onStart,
         onEnded: callbacks.onEnded,
         onError: callbacks.onError,

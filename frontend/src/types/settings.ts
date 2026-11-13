@@ -74,6 +74,8 @@ export interface VoiceSettings {
   volume: number; // 0 to 100
   pitch?: number; // 0.5 to 2.0 (1.0 = default)
   deliveryProfile?: DeliveryProfile; // 'relaxed' | 'conversational' | 'formal'
+  emotionalIntensity?: number; // 0.0 to 1.5 (default 1.0)
+  speechPersonality?: string; // 'balanced_cinematic'
   autoPlayback: boolean;
   sttModelSize?: string; // 'base.en' | 'tiny.en'
   narration?: NarrationSettings;
@@ -116,6 +118,8 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   volume: 100,
   pitch: 1.0,
   deliveryProfile: 'relaxed',
+  emotionalIntensity: 1.0,
+  speechPersonality: 'balanced_cinematic',
   autoPlayback: true,
   sttModelSize: 'base.en',
   narration: DEFAULT_NARRATION_SETTINGS,

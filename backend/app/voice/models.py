@@ -97,6 +97,9 @@ class VoiceProfile(BaseModel):
     is_favorite: bool = Field(default=False, description="Whether marked as favorite by the user.")
     is_default: bool = Field(default=False, description="Whether marked as the active default profile.")
     is_fallback: bool = Field(default=False, description="Whether this profile acts as universal fallback.")
+    consent_timestamp: Optional[str] = Field(None, description="ISO timestamp when explicit voice consent was recorded.")
+    created_by: Optional[str] = Field(None, description="Operator identity or system source that registered the profile.")
+    model_hash: Optional[str] = Field(None, description="Cryptographic SHA256 hash of associated voice model file.")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Provider-specific configuration.")
 
 
@@ -113,6 +116,8 @@ class VoiceProfileCreate(BaseModel):
     volume: int = Field(default=100, ge=0, le=100, description="Volume percentage (0 to 100).")
     style: Optional[str] = Field(None, description="Active emotion or style.")
     is_favorite: bool = Field(default=False, description="Whether marked as favorite.")
+    owner_consent_confirmed: bool = Field(default=False, description="Explicit owner authorization for custom cloned or reference models.")
+    created_by: Optional[str] = Field(default="operator", description="Operator identity registering the profile.")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Optional provider-specific settings.")
 
 

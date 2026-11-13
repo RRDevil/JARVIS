@@ -405,22 +405,15 @@ export const App: React.FC = () => {
 
   // Unified Message Transmission Handler (shared across bubble and full HUD)
   const handleSendMessage = useCallback(
-    async (text: string) => {
+    async (text: string, isContinuation: boolean = false) => {
       const trimmed = text.trim();
       if (!trimmed || isStreaming) return;
       voicePlayer.stop();
       streamingVoice.stop();
 
-      soundManager.play('CLICK_CUE');
-
-      const userMessage: ChatMessage = {
-        id: `msg-${Date.now()}`,
-        role: 'user',
-        content: trimmed,
-        timestamp: new Date().toLocaleTimeString(),
-        numericTimestamp: Date.now(),
-        status: 'completed',
-      };
+      if (!isContinuation) {
+        soundManager.play('CLICK_CUE');
+      }
 
       const assistantMsgId = `asst-${Date.now() + 1}`;
       const initialAssistantMessage: ChatMessage = {
@@ -432,15 +425,45 @@ export const App: React.FC = () => {
         status: 'streaming',
       };
 
-      setMessages((prev) => [...prev, userMessage, initialAssistantMessage]);
+      let userMessage: ChatMessage | null = null;
+      if (!isContinuation) {
+        userMessage = {
+          id: `msg-${Date.now()}`,
+          role: 'user',
+          content: trimmed,
+          timestamp: new Date().toLocaleTimeString(),
+          numericTimestamp: Date.now(),
+          status: 'completed',
+        };
+        setMessages((prev) => [...prev, userMessage!, initialAssistantMessage]);
+      } else {
+        setMessages((prev) => [...prev, initialAssistantMessage]);
+      }
+
       setIsStreaming(true);
       setAssistantState('THINKING');
 
       const taskId = `task-${Date.now()}`;
-      // Immediate proactive voice acknowledgment
-      taskNarration.acknowledgeTask(trimmed, taskId, settings.voice);
+      if (!isContinuation) {
+        // Immediate proactive voice acknowledgment
+        taskNarration.acknowledgeTask(trimmed, taskId, settings.voice);
+      }
 
-      const conversationHistory: ChatMessagePayload[] = [...messages, userMessage]
+      const currentHistory = [...messages];
+      if (userMessage) {
+        currentHistory.push(userMessage);
+      } else {
+        currentHistory.push({
+          id: `sys-${Date.now()}`,
+          role: 'user',
+          content: trimmed,
+          timestamp: new Date().toLocaleTimeString(),
+          numericTimestamp: Date.now(),
+          status: 'completed',
+        });
+      }
+
+      const conversationHistory: ChatMessagePayload[] = currentHistory
         .filter((m) => m.content.trim().length > 0)
         .slice(-15)
         .map((m) => ({
@@ -464,7 +487,7 @@ export const App: React.FC = () => {
           onPlaybackComplete: () => {
             setIsSpeaking(false);
             setAssistantState((prev) => {
-              if (pendingApprovalsRef.current.length > 0) return 'AWAITING_APPROVAL';
+              if (pendingApprovalsRef.current.length > 0 || prev === 'AWAITING_APPROVAL') return 'AWAITING_APPROVAL';
               if (isStreamingRef.current) {
                 return prev === 'SPEAKING' ? 'EXECUTING' : prev;
               }
@@ -547,24 +570,25 @@ export const App: React.FC = () => {
               stageMessage: '',
             }));
             soundManager.play('RESPONSE_COMPLETE');
+            const isAwaiting = stage === 'AWAITING_APPROVAL' || pendingApprovalsRef.current.length > 0;
+            const finalContent = fullText || (isAwaiting ? 'I have prepared this action. Please confirm authorization above.' : 'Action completed.');
             setMessages((prev) =>
               prev.map((msg) =>
                 msg.id === assistantMsgId
                   ? {
                       ...msg,
-                      content: fullText || msg.content,
+                      content: finalContent,
                       status: 'completed',
                     }
                   : msg
               )
             );
             pollApprovals();
-            const isAwaiting = stage === 'AWAITING_APPROVAL' || pendingApprovalsRef.current.length > 0;
             if (isAwaiting) {
               setAssistantState('AWAITING_APPROVAL');
             } else if (settings.voice.voiceOutputEnabled && settings.voice.autoPlayback) {
               setAssistantState((prev) => (prev === 'RESPONDING' || prev === 'EXECUTING' ? 'THINKING' : prev));
-              streamingVoice.flushAndComplete(fullText);
+              streamingVoice.flushAndComplete(finalContent);
             } else {
               setAssistantState('IDLE');
             }
@@ -1211,7 +1235,7 @@ export const App: React.FC = () => {
           {
             id: `msg-approve-${id}-${Date.now()}`,
             role: 'assistant',
-            content: confirmMsg,
+            content: `${confirmMsg} Proceeding with next step...`,
             timestamp: new Date().toLocaleTimeString(),
             numericTimestamp: Date.now(),
             status: 'completed',
@@ -1225,7 +1249,7 @@ export const App: React.FC = () => {
 
         if (isSuccess) {
           const continuationPrompt = `[SYSTEM NOTIFICATION: The operator approved and executed '${actionSummary}'. Execution completed with status: SUCCESS. The desktop action has already been performed. Do NOT re-execute or re-propose '${toolName}'. If all user instructions are satisfied, confirm task completion to the operator. If there are subsequent steps, proceed with the next step.]`;
-          await handleSendMessage(continuationPrompt);
+          await handleSendMessage(continuationPrompt, true);
         } else {
           setAssistantState('IDLE');
         }

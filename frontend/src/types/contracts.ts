@@ -260,6 +260,7 @@ export interface SpeechSynthesizeRequest {
   noise_scale?: number;
   noise_w_scale?: number;
   length_scale?: number;
+  metadata?: Record<string, any>;
 }
 
 export interface SpeechSynthesizeResponse {

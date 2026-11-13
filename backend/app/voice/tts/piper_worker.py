@@ -35,16 +35,58 @@ except Exception:
 RVCInference = None
 
 
+def install_secure_torch_load():
+    """Restricts weights_only=False strictly to the trusted canonical HuBERT base checkpoint.
+    
+    PyTorch 2.6 defaults weights_only=True to prevent arbitrary pickle code execution.
+    Fairseq's hubert_base.pt contains custom Dictionary references requiring unpickling.
+    This guard verifies the target file path is the trusted HuBERT model in site-packages
+    or models directory; all other checkpoints are strictly forced to weights_only=True.
+    """
+    try:
+        import torch
+        if getattr(torch, "_jarvis_secure_load_installed", False):
+            return
+        
+        _orig_torch_load = torch.load
+
+        # If available, register safe globals for fairseq
+        if hasattr(torch.serialization, "add_safe_globals"):
+            try:
+                import fairseq.data.dictionary
+                torch.serialization.add_safe_globals([
+                    fairseq.data.dictionary.Dictionary,
+                ])
+            except Exception:
+                pass
+
+        def _secure_torch_load(f, *args, **kwargs):
+            trusted = False
+            if isinstance(f, (str, Path)):
+                real_path = os.path.realpath(str(f)).replace("\\", "/").lower()
+                if real_path.endswith("hubert_base.pt") or real_path.endswith("hubert.pt"):
+                    if "rvc_python" in real_path or "site-packages" in real_path or "models" in real_path:
+                        trusted = True
+            
+            if trusted:
+                kwargs["weights_only"] = False
+            else:
+                kwargs.setdefault("weights_only", True)
+            
+            return _orig_torch_load(f, *args, **kwargs)
+
+        torch.load = _secure_torch_load
+        torch._jarvis_secure_load_installed = True
+    except Exception as exc:
+        sys.stderr.write(f"Warning: could not install secure torch.load guard: {exc}\n")
+        sys.stderr.flush()
+
+
 def get_rvc_inference():
     global RVCInference
     if RVCInference is None:
         try:
-            import torch
-            _orig_torch_load = torch.load
-            def _safe_torch_load(*args, **kwargs):
-                kwargs["weights_only"] = False
-                return _orig_torch_load(*args, **kwargs)
-            torch.load = _safe_torch_load
+            install_secure_torch_load()
             from rvc_python.infer import RVCInference as _RVC
             RVCInference = _RVC
         except Exception as exc:
@@ -59,6 +101,7 @@ class PiperWorker:
         self.voice: PiperVoice = None
         self.current_model_path: str = None
         self.current_config_path: str = None
+        self._cached_rvc: dict = {}
 
     def load_model(self, model_path: str, config_path: str = None) -> bool:
         if self.voice is not None and self.current_model_path == model_path:
@@ -129,6 +172,7 @@ class PiperWorker:
             if rvc_cls:
                 import torch
                 torch.set_num_threads(6)
+                install_secure_torch_load()
                 with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_in:
                     tmp_in.write(raw_wav_bytes)
                     tmp_in_path = tmp_in.name
@@ -137,12 +181,17 @@ class PiperWorker:
                     tmp_out_path = tmp_out.name
 
                 try:
-                    rvc = rvc_cls(
-                        device="cpu:0",
-                        model_path=rvc_model,
-                        index_path=rvc_index if rvc_index and os.path.exists(rvc_index) else None,
-                        version="v2",
-                    )
+                    cache_key = (rvc_model, rvc_index)
+                    rvc = self._cached_rvc.get(cache_key)
+                    if rvc is None:
+                        rvc = rvc_cls(
+                            device="cpu:0",
+                            model_path=rvc_model,
+                            index_path=rvc_index if rvc_index and os.path.exists(rvc_index) else None,
+                            version="v2",
+                        )
+                        self._cached_rvc[cache_key] = rvc
+
                     rvc.set_params(
                         f0method=f0method,
                         f0up_key=f0up_key,

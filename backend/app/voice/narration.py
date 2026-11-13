@@ -45,7 +45,8 @@ class NarrationPriority(int, Enum):
     APPROVAL = 2        # Approval requests and user decisions
     ACKNOWLEDGMENT = 3  # Immediate task receipt acknowledgment
     PROGRESS = 4        # Execution progress updates
-    FINAL_RESPONSE = 5  # Conversational final responses
+    PREVIEW = 5         # User voice testing / previews in settings
+    FINAL_RESPONSE = 6  # Conversational final responses
 
 
 class TaskLifecycleEvent(BaseModel):
@@ -116,13 +117,14 @@ class TaskNarrationEngine:
             text = self._formulate_acknowledgment_text(user_prompt)
             event = TaskLifecycleEvent(
                 task_id=task_id,
+                event_id=f"ack:{task_id}",
                 event_type=TaskLifecycleEventType.TASK_ACKNOWLEDGED,
                 action_or_app=None,
                 task_state="THINKING",
                 is_narratable=self.settings.enabled and self.settings.acknowledge_tasks,
                 narration_text=text,
                 priority=NarrationPriority.ACKNOWLEDGMENT,
-                progress_info={"prompt_preview": user_prompt[:80]},
+                progress_info={"context": "acknowledgment", "prompt_preview": user_prompt[:80]},
             )
             self._record_narration(task_id, text)
             return event
@@ -231,7 +233,7 @@ class TaskNarrationEngine:
                 is_narratable=True,
                 narration_text=spoken,
                 priority=NarrationPriority.PROGRESS,
-                progress_info={"tool_name": tool_name, "parameters": parameters},
+                progress_info={"context": "progress", "tool_name": tool_name, "parameters": parameters},
             )
 
     def _formulate_action_started_text(self, tool_name: str, params: Dict[str, Any]) -> (str, Optional[str]):
@@ -357,7 +359,7 @@ class TaskNarrationEngine:
                 is_narratable=True,
                 narration_text=spoken,
                 priority=NarrationPriority.PROGRESS,
-                progress_info={"result_status": "success" if is_success else "failed"},
+                progress_info={"context": "progress", "result_status": "success" if is_success else "failed"},
             )
 
     # -------------------------------------------------------------------------
@@ -393,7 +395,7 @@ class TaskNarrationEngine:
                 is_narratable=self.settings.enabled and self.settings.announce_approvals,
                 narration_text=spoken,
                 priority=NarrationPriority.APPROVAL,
-                progress_info={"action_summary": action_summary, "risk_tier": risk_tier, "approval_id": approval_id},
+                progress_info={"context": "approval", "action_summary": action_summary, "risk_tier": risk_tier, "approval_id": approval_id},
             )
             self._record_narration(task_id, spoken)
             return event
@@ -427,7 +429,7 @@ class TaskNarrationEngine:
                 is_narratable=self.settings.enabled and self.settings.announce_approvals,
                 narration_text=spoken,
                 priority=NarrationPriority.APPROVAL,
-                progress_info={"approved": approved, "action_summary": action_summary, "approval_id": approval_id},
+                progress_info={"context": "approval", "approved": approved, "action_summary": action_summary, "approval_id": approval_id},
             )
             self._record_narration(task_id, spoken)
             return event
@@ -461,7 +463,7 @@ class TaskNarrationEngine:
                 is_narratable=self.settings.enabled and self.settings.announce_errors,
                 narration_text=spoken,
                 priority=NarrationPriority.CRITICAL if not recovery_attempted else NarrationPriority.PROGRESS,
-                progress_info={"tool_name": tool_name, "error": error_message},
+                progress_info={"context": "error", "tool_name": tool_name, "error": error_message},
             )
             self._record_narration(task_id, spoken)
             return event
@@ -537,11 +539,13 @@ class TaskNarrationEngine:
             self.reset_task(task_id)
             return TaskLifecycleEvent(
                 task_id=task_id,
+                event_id=f"completion:{task_id}",
                 event_type=TaskLifecycleEventType.TASK_COMPLETED,
                 task_state="IDLE",
                 is_narratable=True,
                 narration_text=spoken,
                 priority=NarrationPriority.PROGRESS,
+                progress_info={"context": "completion"},
             )
 
     def _record_narration(self, task_id: str, text: str) -> None:

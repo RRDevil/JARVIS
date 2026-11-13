@@ -191,3 +191,67 @@ async def test_piper_tts_provider_synthesis():
     from app.voice.tts.piper_worker_client import piper_worker
     await piper_worker.stop()
 
+
+def test_secure_torch_load_fairseq_guard(tmp_path):
+    """Verify that piper_worker's secure torch load allows trusted HuBERT while blocking untrusted pickles."""
+    if not VOICE_PYTHON_EXE.exists():
+        pytest.skip(".venv_voice not found")
+
+    verify_script = """
+import os
+import sys
+from pathlib import Path
+import torch
+
+# Import piper_worker's install_secure_torch_load
+sys.path.insert(0, str(Path(r"{worker_dir}").resolve()))
+from piper_worker import install_secure_torch_load
+
+install_secure_torch_load()
+
+# Test 1: Check that an untrusted pickle is strictly blocked by weights_only=True
+untrusted_file = r"{untrusted_path}"
+class UntrustedPayload:
+    def __reduce__(self):
+        return (eval, ("1+1",))
+
+torch.save(UntrustedPayload(), untrusted_file)
+
+try:
+    torch.load(untrusted_file)
+    print("FAIL: untrusted payload loaded!")
+    sys.exit(1)
+except Exception as e:
+    print(f"PASS: untrusted payload blocked as expected ({type(e).__name__})")
+
+# Test 2: Verify trusted HuBERT checkpoint loads if present
+hubert_path = r"{hubert_path}"
+if os.path.exists(hubert_path):
+    loaded = torch.load(hubert_path)
+    print(f"PASS: trusted HuBERT loaded successfully ({type(loaded).__name__})")
+else:
+    print("PASS: HuBERT path not present on disk, skipped load")
+
+sys.exit(0)
+"""
+    hubert_pt = PROJECT_ROOT / ".venv_voice" / "Lib" / "site-packages" / "rvc_python" / "base_model" / "hubert_base.pt"
+    untrusted_pt = tmp_path / "exploit.pt"
+    worker_dir = PROJECT_ROOT / "backend" / "app" / "voice" / "tts"
+
+    code = (
+        verify_script
+        .replace("{worker_dir}", str(worker_dir))
+        .replace("{untrusted_path}", str(untrusted_pt))
+        .replace("{hubert_path}", str(hubert_pt))
+    )
+
+    result = subprocess.run(
+        [str(VOICE_PYTHON_EXE), "-c", code],
+        capture_output=True,
+        text=True,
+        timeout=35,
+    )
+    assert result.returncode == 0, f"Script failed: {result.stdout}\n{result.stderr}"
+    assert "PASS: untrusted payload blocked" in result.stdout
+
+

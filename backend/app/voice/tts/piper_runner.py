@@ -78,10 +78,28 @@ def synthesize_to_wav_bytes(
             try:
                 import torch
                 _orig_torch_load = torch.load
-                def _safe_torch_load(*args, **kwargs):
-                    kwargs["weights_only"] = False
-                    return _orig_torch_load(*args, **kwargs)
-                torch.load = _safe_torch_load
+
+                if hasattr(torch.serialization, "add_safe_globals"):
+                    try:
+                        import fairseq.data.dictionary
+                        torch.serialization.add_safe_globals([fairseq.data.dictionary.Dictionary])
+                    except Exception:
+                        pass
+
+                def _secure_torch_load(f, *args, **kwargs):
+                    trusted = False
+                    if isinstance(f, (str, Path)):
+                        real_path = os.path.realpath(str(f)).replace("\\", "/").lower()
+                        if real_path.endswith("hubert_base.pt") or real_path.endswith("hubert.pt"):
+                            if "rvc_python" in real_path or "site-packages" in real_path or "models" in real_path:
+                                trusted = True
+                    if trusted:
+                        kwargs["weights_only"] = False
+                    else:
+                        kwargs.setdefault("weights_only", True)
+                    return _orig_torch_load(f, *args, **kwargs)
+
+                torch.load = _secure_torch_load
                 from rvc_python.infer import RVCInference as _RVC
                 RVCInference = _RVC
             except Exception as exc:

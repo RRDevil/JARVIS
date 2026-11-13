@@ -138,3 +138,23 @@ async def test_plan_tools():
     )
     assert res_get.success is True
     assert res_get.data["id"] == plan_id
+
+
+def test_browser_research_goal_formulation():
+    """Verify autonomous plan formulation for multi-step browser search and article discovery."""
+    prompt = "can you open a new tab in opera and find me an article about species of snakes found in Nepal"
+    plan = task_planning_engine.create_goal_plan(user_prompt=prompt, session_id="test-snakes-plan")
+
+    assert plan is not None
+    assert "species of snakes found in Nepal" in plan.interpreted_goal or "snakes" in plan.interpreted_goal.lower()
+    assert len(plan.steps) == 2
+    # Step 1: Navigate to query in Opera GX
+    assert plan.steps[0].required_tool == "app_execute_capability"
+    assert plan.steps[0].parameters["app_id"] == "browser.opera_gx"
+    assert plan.steps[0].parameters["capability_id"] == "browser.navigate"
+    assert "species of snakes found in Nepal" in plan.steps[0].parameters["parameters"]["query"]
+    # Step 2: Read active page
+    assert plan.steps[1].required_tool == "app_execute_capability"
+    assert plan.steps[1].parameters["capability_id"] == "browser.read_page"
+    assert plan.steps[1].depends_on == ["step-1"]
+

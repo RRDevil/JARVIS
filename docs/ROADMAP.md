@@ -228,6 +228,24 @@ flowchart LR
 
 ---
 
+### Phase 6.1: Natural Voice & Speech Intelligence Enhancement (Completed)
+- **Goal:** Transform J.A.R.V.I.S.'s voice output into a natural, expressive, context-aware speech system with balanced cinematic delivery, centralized playback, dynamic prosody, expanded text normalization, and CPU optimization.
+- **Deliverables:**
+  - Centralized single-active playback routing in `StreamingVoiceOrchestrator` via `PrioritizedSpeechQueue.enqueuePreSynthesized(..., NarrationPriority.FINAL_RESPONSE)`. Zero overlapping voices.
+  - Dynamic Context Prosody Controller (`backend/app/voice/prosody.py`) covering 9 semantic contexts (`conversation`, `technical`, `acknowledgment`, `warning`, `error`, `approval`, `progress`, `completion`, `empathetic`) with emotional intensity scaling (0.0 to 1.5).
+  - Advanced speech normalization (`backend/app/voice/normalizer.py`, `frontend/src/services/textNormalizer.ts`) supporting math formulas, Windows/POSIX file paths, delimited numbers, metric units, and extensible pronunciation dictionary (`backend/app/voice/pronunciation.py`).
+  - In-memory PyTorch RVC weights caching (`backend/app/voice/tts/piper_worker.py`) delivering 1.78x CPU conversion speedup (9.09s vs 16.17s on Intel Core i7-1355U).
+  - Explicit owner consent verification for custom cloned voice profiles (`backend/app/voice/profiles.py`).
+  - Frontend UI integration in Settings Modal exposing Vocal Personality and Adaptive Emotional Intensity controls.
+- **Acceptance Criteria:**
+  - [x] Exactly one active physical audio stream plays at any time; disjoint audio elements eliminated.
+  - [x] Full-response synthesis preserved with sub-second Piper synthesis (0.326s on 3.75s audio, RTF 0.087, 11.5x real-time).
+  - [x] Dynamic prosody adjusts speaking rate, pitch, and phoneme lengths across all 9 semantic contexts.
+  - [x] File paths, math formulas, and technical acronyms normalized to articulate spoken English.
+  - [x] 234 backend pytest tests and 141 frontend vitest tests passing with 100% pass rate.
+
+---
+
 ### Phase 7: Persistent Memory, Workflows, & Customization (In Progress - Preference Memory Completed)
 - **Goal:** User-controlled long-term memory, workflow preferences, and automated reusable routines.
 - **Deliverables:**

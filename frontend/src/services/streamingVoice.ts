@@ -12,6 +12,8 @@ import { VoiceSettings } from '../types/settings';
 import { synthesizeSpeech } from './api';
 import { normalizeTextForSpeech } from './textNormalizer';
 import { speechTiming } from './speechTiming';
+import { NarrationPriority } from '../types/narration';
+import { speechQueue } from './speechQueue';
 
 export interface StreamingVoiceCallbacks {
   onStart?: () => void;
@@ -59,15 +61,19 @@ export class StreamingVoiceOrchestrator {
   private wordCount = 0;
   private providerUsed = '';
 
+  private taskId = 'turn-response';
+
   /**
    * Initializes a new full-response speech synthesis session.
    * Invalidates any previous pending synthesis or active playback.
    */
-  public startSession(settings: VoiceSettings, callbacks: StreamingVoiceCallbacks = {}): void {
+  public startSession(settings: VoiceSettings, callbacks: StreamingVoiceCallbacks = {}, taskId: string = 'turn-response'): void {
     this.stop();
 
     this.settings = settings;
     this.callbacks = callbacks;
+    this.taskId = taskId || 'turn-response';
+    speechQueue.clearCancelledTask(this.taskId);
     this.isSessionActive = true;
     this.isSynthesizing = false;
     this.isPlaying = false;
@@ -151,6 +157,11 @@ export class StreamingVoiceOrchestrator {
         noise_scale: profileConfig.noiseScale,
         noise_w_scale: profileConfig.noiseWScale,
         length_scale: profileConfig.lengthScale,
+        metadata: {
+          emotional_intensity: this.settings.emotionalIntensity ?? 1.0,
+          personality: this.settings.speechPersonality || 'balanced_cinematic',
+          context: 'conversation',
+        },
       });
 
       // Cancellation check: verify session has not been superseded or stopped during synthesis
@@ -169,73 +180,41 @@ export class StreamingVoiceOrchestrator {
         return;
       }
 
-      // 4. Play continuous full-response audio
-      await this.playAudioStream(resp.audio_base64, speechText, seqId);
+      // 4. Delegate to authoritative centralized SpeechQueue to strictly enforce single-voice playback
+      await speechQueue.enqueuePreSynthesized(
+        resp.audio_base64,
+        speechText,
+        NarrationPriority.FINAL_RESPONSE,
+        this.taskId || 'turn-response',
+        this.settings,
+        {
+          onStart: () => {
+            if (this.isSessionActive && seqId === this.activeSequenceId) {
+              this.isPlaying = true;
+              this.firstAudioTime = performance.now();
+              this.callbacks.onPlaybackStart?.();
+              this.callbacks.onSegmentStart?.(0, speechText);
+              this.emitMetrics();
+            }
+          },
+          onComplete: () => {
+            this.isPlaying = false;
+            this.isSessionActive = false;
+            this.callbacks.onPlaybackComplete?.();
+            this.emitMetrics();
+          },
+          onError: (err) => {
+            this.isPlaying = false;
+            this.isSessionActive = false;
+            this.callbacks.onError?.(err);
+          },
+        }
+      );
     } catch (err: any) {
       this.isSynthesizing = false;
       if (this.isSessionActive && seqId === this.activeSequenceId) {
         this.isSessionActive = false;
         console.warn('[StreamingVoice] Full-response synthesis fault:', err);
-        this.callbacks.onError?.(err);
-      }
-    }
-  }
-
-  /**
-   * Instantiates an HTMLAudioElement for continuous, uninterrupted audio playback.
-   */
-  private async playAudioStream(audioBase64: string, speechText: string, seqId: number): Promise<void> {
-    const audioUrl = `data:audio/wav;base64,${audioBase64}`;
-    const audio = new Audio(audioUrl);
-    this.currentAudio = audio;
-
-    const volumeLevel = typeof this.settings?.volume === 'number'
-      ? Math.max(0, Math.min(100, this.settings.volume)) / 100
-      : 1.0;
-    audio.volume = volumeLevel;
-
-    let startEmitted = false;
-    const emitStart = () => {
-      if (!startEmitted && this.isSessionActive && seqId === this.activeSequenceId) {
-        startEmitted = true;
-        this.isPlaying = true;
-        this.firstAudioTime = performance.now();
-        this.callbacks.onPlaybackStart?.();
-        this.callbacks.onSegmentStart?.(0, speechText);
-        this.emitMetrics();
-      }
-    };
-
-    audio.onplay = emitStart;
-
-    audio.onended = () => {
-      if (this.currentAudio === audio) {
-        this.currentAudio = null;
-      }
-      this.isPlaying = false;
-      this.isSessionActive = false;
-      this.callbacks.onPlaybackComplete?.();
-      this.emitMetrics();
-    };
-
-    audio.onerror = (e) => {
-      if (this.currentAudio === audio) {
-        this.currentAudio = null;
-      }
-      this.isPlaying = false;
-      this.isSessionActive = false;
-      console.warn('[StreamingVoice] Audio playback error:', e);
-      this.callbacks.onError?.(e);
-      this.emitMetrics();
-    };
-
-    try {
-      await audio.play();
-      emitStart();
-    } catch (err) {
-      if (this.isSessionActive && seqId === this.activeSequenceId) {
-        this.isPlaying = false;
-        this.isSessionActive = false;
         this.callbacks.onError?.(err);
       }
     }
@@ -282,6 +261,10 @@ export class StreamingVoiceOrchestrator {
     this.isPlaying = false;
     this.activeSequenceId++;
     this.accumulatedText = '';
+
+    if (this.taskId) {
+      speechQueue.cancelTask(this.taskId);
+    }
 
     if (this.currentAudio) {
       try {

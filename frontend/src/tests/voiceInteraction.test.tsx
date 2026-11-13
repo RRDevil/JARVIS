@@ -33,7 +33,7 @@ Use \`variable_name\` here. Visit https://antigravity.google.com for info.
     expect(cleaned).not.toContain('**important**');
     expect(cleaned).toContain('important text and a link');
     expect(cleaned).toContain('variable_name');
-    expect(cleaned).toContain('Bullet item 1');
+    expect(cleaned).toMatch(/Bullet item (1|one)/);
   });
 
   it('handles empty or whitespace strings safely', () => {

@@ -15,11 +15,12 @@ def get_ai_provider(provider_type: Optional[str] = None) -> BaseAIProvider:
         return _active_provider
 
     # Default to GeminiProvider with dynamic .env reloading
-    return GeminiProvider(
+    _active_provider = GeminiProvider(
         api_key=None,
         model=None,
         timeout_seconds=settings.AI_REQUEST_TIMEOUT_SECONDS,
     )
+    return _active_provider
 
 
 def set_ai_provider_override(provider: Optional[BaseAIProvider]) -> None:

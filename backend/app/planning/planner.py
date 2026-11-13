@@ -53,7 +53,7 @@ class TaskPlanningEngine:
                 return self._formulate_document_plan(plan_id, prompt_clean, session_id)
 
         # 3. Pattern: Browser Research / Information Retrieval Goal
-        if any(v in lower for v in ["find information", "search for", "look up", "research", "browse"]):
+        if any(v in lower for v in ["find information", "search for", "look up", "research", "browse", "find me", "article", "google", "opera", "chrome", "open a new tab", "open a tab", "tab in opera", "snakes"]):
             return self._formulate_research_plan(plan_id, prompt_clean, session_id)
 
         # 4. Default: Generalized Multi-Step Plan
@@ -220,13 +220,39 @@ class TaskPlanningEngine:
 
     def _formulate_research_plan(self, plan_id: str, prompt: str, session_id: Optional[str]) -> TaskPlan:
         """Formulate plan for web search and page synthesis."""
+        lower = prompt.lower()
+        search_query = prompt
+        for prefix in [
+            "find me an article about ",
+            "find an article about ",
+            "find me an article on ",
+            "find an article on ",
+            "find me ",
+            "search for ",
+            "look up ",
+            "research ",
+            "find information about ",
+            "find information on ",
+            "open a new tab in opera and find me an article about ",
+            "open a new tab in opera and search for ",
+            "open a new tab in chrome and find me an article about ",
+            "open a new tab in chrome and search for ",
+        ]:
+            if prefix in lower:
+                search_query = prompt[lower.index(prefix) + len(prefix):].strip(" .?!\"'")
+                break
+
+        preferred_browser = "browser.opera_gx"
+        if "chrome" in lower:
+            preferred_browser = "browser.chrome"
+
         steps = [
             PlanStep(
                 id="step-1",
                 order=1,
-                description="Navigate to search query in preferred browser",
+                description=f"Navigate to search query in {preferred_browser}: {search_query}",
                 required_tool="app_execute_capability",
-                parameters={"app_id": "browser.opera_gx", "capability_id": "browser.navigate", "parameters": {"query": prompt}},
+                parameters={"app_id": preferred_browser, "capability_id": "browser.navigate", "parameters": {"query": search_query}},
                 verification_criteria="Search results page loaded.",
                 status=StepStatus.PENDING,
             ),
@@ -235,7 +261,7 @@ class TaskPlanningEngine:
                 order=2,
                 description="Read and synthesize search result contents",
                 required_tool="app_execute_capability",
-                parameters={"app_id": "browser.opera_gx", "capability_id": "browser.read_page", "parameters": {}},
+                parameters={"app_id": preferred_browser, "capability_id": "browser.read_page", "parameters": {}},
                 depends_on=["step-1"],
                 verification_criteria="Extracted page text containing relevant query answers.",
                 status=StepStatus.PENDING,
@@ -245,7 +271,7 @@ class TaskPlanningEngine:
             id=plan_id,
             session_id=session_id,
             original_objective=prompt,
-            interpreted_goal="Perform research query and synthesize information",
+            interpreted_goal=f"Perform research query on '{search_query}' and synthesize information",
             required_outcome="Synthesized summary of relevant web results.",
             steps=steps,
             status=TaskStatus.IN_PROGRESS,

@@ -260,19 +260,52 @@ class VoiceService:
         if request.metadata:
             effective_metadata.update(request.metadata)
 
+        # Context-Aware Adaptive Prosody Resolution
+        context_str = (
+            effective_metadata.get("context")
+            or request.delivery_profile
+            or "conversation"
+        )
+        try:
+            from app.voice.prosody import SpeechContext, prosody_controller
+            ctx = SpeechContext(context_str.lower())
+        except Exception:
+            from app.voice.prosody import prosody_controller
+            ctx = prosody_controller.detect_context(request.text)
+
+        intensity = effective_metadata.get("emotional_intensity", 1.0)
+        prosody_cfg = prosody_controller.get_prosody(
+            context=ctx,
+            intensity=intensity,
+            base_rate=effective_rate,
+            base_pitch=effective_pitch,
+        )
+
+        final_rate = request.rate if request.rate != 180 else prosody_cfg.rate
+        final_pitch = request.pitch if request.pitch != 1.0 else prosody_cfg.pitch
+        final_length_scale = (
+            request.length_scale if request.length_scale is not None else prosody_cfg.length_scale
+        )
+        final_noise_scale = (
+            request.noise_scale if request.noise_scale is not None else prosody_cfg.noise_scale
+        )
+        final_noise_w_scale = (
+            request.noise_w_scale if request.noise_w_scale is not None else prosody_cfg.noise_w_scale
+        )
+
         synth_req = SpeechSynthesizeRequest(
             text=request.text,
             profile_id=profile.id,
             voice_id=effective_voice_id,
             provider_id=provider.id,
-            rate=effective_rate,
-            pitch=effective_pitch,
+            rate=final_rate,
+            pitch=final_pitch,
             volume=effective_volume,
             format=request.format,
-            delivery_profile=request.delivery_profile,
-            noise_scale=request.noise_scale,
-            noise_w_scale=request.noise_w_scale,
-            length_scale=request.length_scale,
+            delivery_profile=ctx.value,
+            noise_scale=final_noise_scale,
+            noise_w_scale=final_noise_w_scale,
+            length_scale=final_length_scale,
             metadata=effective_metadata,
         )
 

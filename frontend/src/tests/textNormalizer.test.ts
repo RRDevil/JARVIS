@@ -97,5 +97,55 @@ Check [documentation](https://jarvis.ai) for **critical** details.
     const res = normalizeTextForSpeech('Serving GraphQL endpoints.');
     expect(res).toContain('graph Q L');
   });
+
+  it('normalizes comma-separated numbers and standalone integers', () => {
+    const res = normalizeTextForSpeech('Processed 1,250 requests across 42 servers.');
+    expect(res).toContain('one thousand two hundred fifty requests');
+    expect(res).toContain('forty-two servers');
+  });
+
+  it('normalizes negative numbers and metrics', () => {
+    const res = normalizeTextForSpeech('Temperature dropped to -5 degrees with 0.21s latency and 100MB RAM.');
+    expect(res).toContain('negative five degrees');
+    expect(res).toContain('zero point two one seconds');
+    expect(res).toContain('one hundred megabytes');
+  });
+
+  it('normalizes programming languages C++ and C# and email addresses', () => {
+    const res = normalizeTextForSpeech('Write code in C++ or C# and email team@jarvis.ai.');
+    expect(res).toContain('C plus plus');
+    expect(res).toContain('C sharp');
+    expect(res).toContain('team at jarvis dot A I');
+  });
+
+  it('guarantees identical parity for expanded corpus (dates, durations, 24h times, IPs, versions, Rs, negative pct)', () => {
+    // ISO Calendar Dates
+    const resDate = normalizeTextForSpeech('Release date is 2026-11-13.');
+    expect(resDate).toContain('November thirteenth, twenty twenty-six');
+
+    // Durations
+    const resDur = normalizeTextForSpeech('Execution lasted 2h 30m.');
+    expect(resDur).toContain('two hours thirty minutes');
+
+    // 24-hour time format
+    const res24 = normalizeTextForSpeech('Meeting at 14:30 sharp.');
+    expect(res24).toContain('two thirty P M');
+
+    // IPv4 addresses
+    const resIp = normalizeTextForSpeech('Connected to 192.168.1.1 successfully.');
+    expect(resIp).toContain('one hundred ninety-two dot one hundred sixty-eight dot one dot one');
+
+    // Semantic versions
+    const resVer = normalizeTextForSpeech('Upgraded to v1.2.3 today.');
+    expect(resVer).toContain('version one point two point three');
+
+    // Rs currency
+    const resRs = normalizeTextForSpeech('Invoice total is Rs. 500.');
+    expect(resRs).toContain('five hundred rupees');
+
+    // Negative percentages
+    const resNegPct = normalizeTextForSpeech('Variance is -3.5% overall.');
+    expect(resNegPct).toContain('negative three point five percent');
+  });
 });
 

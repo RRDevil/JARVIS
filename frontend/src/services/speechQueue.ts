@@ -51,6 +51,7 @@ export class PrioritizedSpeechQueue {
   private callbacks: SpeechQueueCallbacks = {};
   private activeSequenceId = 0;
   private announcedEventKeys = new Set<string>();
+  private cancelledTaskIds = new Set<string>();
 
   constructor(callbacks: SpeechQueueCallbacks = {}) {
     this.callbacks = callbacks;
@@ -70,6 +71,7 @@ export class PrioritizedSpeechQueue {
 
   public clearDeduplicationRegistry(): void {
     this.announcedEventKeys.clear();
+    this.cancelledTaskIds.clear();
   }
 
   /**
@@ -94,12 +96,19 @@ export class PrioritizedSpeechQueue {
       return null;
     }
 
+    // Drop late-arriving events for explicitly cancelled tasks
+    if (this.cancelledTaskIds.has(taskId)) {
+      console.warn(`[PrioritizedSpeechQueue] Dropping late-arriving event for cancelled task ${taskId}`);
+      return null;
+    }
+
     // Deduplication by stable eventId
-    if (options?.eventId) {
-      if (this.announcedEventKeys.has(options.eventId)) {
+    const eventId = options?.eventId || (metadata && metadata.event_id);
+    if (eventId) {
+      if (this.announcedEventKeys.has(eventId)) {
         return null;
       }
-      this.announcedEventKeys.add(options.eventId);
+      this.announcedEventKeys.add(eventId);
     }
 
     const cleanText = normalizeTextForSpeech(text);
@@ -109,7 +118,7 @@ export class PrioritizedSpeechQueue {
 
     const item: SpeechQueueItem = {
       id: `spq-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      eventId: options?.eventId,
+      eventId,
       text: cleanText,
       priority,
       taskId,
@@ -130,14 +139,27 @@ export class PrioritizedSpeechQueue {
     }
 
     // Preemption Check:
-    // 1. High priority (CRITICAL/APPROVAL) preempts lower priority (PROGRESS/FINAL_RESPONSE)
-    // 2. An APPROVAL_DECISION preempts its matching APPROVAL_REQUIRED request
-    const shouldPreempt =
-      this.currentItem !== null &&
-      (
-        (this.currentItem.priority > priority && priority <= NarrationPriority.APPROVAL) ||
-        (options?.approvalId && this.currentItem.approvalId === options.approvalId)
-      );
+    // 1. CRITICAL (1) and APPROVAL (2) preempt all lower priorities (PROGRESS 4, PREVIEW 5, FINAL_RESPONSE 6)
+    // 2. ACKNOWLEDGMENT (3) preempts voice PREVIEW (5) and conversational FINAL_RESPONSE (6)
+    // 3. Voice PREVIEW (5) preempts FINAL_RESPONSE (6), but NEVER preempts CRITICAL, APPROVAL, ACKNOWLEDGMENT, or PROGRESS
+    // 4. Consequential approval decisions immediately preempt matching APPROVAL requests
+    const currentPri = this.currentItem?.priority ?? 999;
+    const isApprovalResolution = Boolean(
+      options?.approvalId && this.currentItem?.approvalId === options.approvalId
+    );
+
+    let shouldPreempt = false;
+    if (this.currentItem !== null) {
+      if (isApprovalResolution) {
+        shouldPreempt = true;
+      } else if (priority === NarrationPriority.CRITICAL || priority === NarrationPriority.APPROVAL) {
+        shouldPreempt = currentPri > priority;
+      } else if (priority === NarrationPriority.ACKNOWLEDGMENT) {
+        shouldPreempt = currentPri >= NarrationPriority.PREVIEW;
+      } else if (priority === NarrationPriority.PREVIEW) {
+        shouldPreempt = currentPri > NarrationPriority.PREVIEW;
+      }
+    }
 
     if (shouldPreempt) {
       const preempted = this.currentItem!;
@@ -212,6 +234,12 @@ export class PrioritizedSpeechQueue {
    * Cancel all pending and playing utterances for a specific task ID.
    */
   public cancelTask(taskId: string): void {
+    if (!taskId) return;
+    this.cancelledTaskIds.add(taskId);
+    if (this.cancelledTaskIds.size > 200) {
+      const first = this.cancelledTaskIds.values().next().value;
+      if (first) this.cancelledTaskIds.delete(first);
+    }
     this.queue = this.queue.filter((q) => q.taskId !== taskId);
 
     if (this.currentItem && this.currentItem.taskId === taskId) {
@@ -223,6 +251,10 @@ export class PrioritizedSpeechQueue {
       this.isProcessing = false;
       this.callbacks.onQueueDrained?.();
     }
+  }
+
+  public clearCancelledTask(taskId: string): void {
+    this.cancelledTaskIds.delete(taskId);
   }
 
   /**
@@ -283,6 +315,7 @@ export class PrioritizedSpeechQueue {
   public stopAll(): void {
     this.activeSequenceId++;
     this.queue = [];
+    this.cancelledTaskIds.clear();
     this.stopCurrentAudio();
     this.isProcessing = false;
     this.callbacks.onQueueDrained?.();
@@ -329,10 +362,25 @@ export class PrioritizedSpeechQueue {
           volume: voiceSettings.volume,
           pitch: voiceSettings.pitch,
           delivery_profile: voiceSettings.deliveryProfile || 'relaxed',
+          metadata: {
+            emotional_intensity: voiceSettings.emotionalIntensity ?? 1.0,
+            personality: voiceSettings.speechPersonality || 'balanced_cinematic',
+            ...(item.metadata || {}),
+          },
         });
 
         // Sequence validity check: discard if interrupted during synthesis
         if (currentSeq !== this.activeSequenceId) {
+          return;
+        }
+
+        // Discard if task was cancelled while synthesis was in flight
+        if (this.cancelledTaskIds.has(item.taskId)) {
+          console.warn(`[PrioritizedSpeechQueue] Discarding synthesized audio for cancelled task ${item.taskId}`);
+          this.currentItem = null;
+          if (currentSeq === this.activeSequenceId) {
+            this.processQueue(voiceSettings);
+          }
           return;
         }
 
@@ -390,9 +438,11 @@ export class PrioritizedSpeechQueue {
         audio.onplay = null;
         audio.onended = null;
         audio.onerror = null;
-        audio.removeEventListener('playing', onStart);
-        audio.removeEventListener('ended', onEnded);
-        audio.removeEventListener('error', onError);
+        if (typeof audio.removeEventListener === 'function') {
+          audio.removeEventListener('playing', onStart);
+          audio.removeEventListener('ended', onEnded);
+          audio.removeEventListener('error', onError);
+        }
         if (this.currentAudio === audio) {
           this.currentAudio = null;
         }
@@ -426,9 +476,11 @@ export class PrioritizedSpeechQueue {
       audio.onplay = onStart;
       audio.onended = onEnded;
       audio.onerror = onError;
-      audio.addEventListener('playing', onStart);
-      audio.addEventListener('ended', onEnded);
-      audio.addEventListener('error', onError);
+      if (typeof audio.addEventListener === 'function') {
+        audio.addEventListener('playing', onStart);
+        audio.addEventListener('ended', onEnded);
+        audio.addEventListener('error', onError);
+      }
 
       const playPromise = audio.play();
       if (playPromise && typeof playPromise.catch === 'function') {

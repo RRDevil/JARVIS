@@ -200,4 +200,240 @@ describe('Authoritative Speech Playback Manager & Approval Synchronization', () 
     // Only First utterance is currently playing; second is in queue
     expect(queue.getCurrentItem()?.text).toContain('First utterance');
   });
+
+  it('executes full 8-step stress test with zero overlaps, proper preemption, and single stream', async () => {
+    let activeAudioElements = 0;
+    let maxConcurrentAudio = 0;
+
+    class TrackedMockAudio {
+      src = '';
+      volume = 1.0;
+      currentTime = 0;
+      onplay: (() => void) | null = null;
+      onended: (() => void) | null = null;
+      onerror: ((err: any) => void) | null = null;
+
+      constructor(url?: string) {
+        this.src = url || '';
+      }
+
+      play() {
+        activeAudioElements++;
+        maxConcurrentAudio = Math.max(maxConcurrentAudio, activeAudioElements);
+        return Promise.resolve();
+      }
+      pause() {
+        if (activeAudioElements > 0) activeAudioElements--;
+      }
+      load() {}
+      addEventListener(event: string, cb: any) {
+        if (event === 'playing') this.onplay = cb;
+        if (event === 'ended') this.onended = cb;
+        if (event === 'error') this.onerror = cb;
+      }
+      removeEventListener() {}
+    }
+    vi.stubGlobal('Audio', TrackedMockAudio);
+
+    // Step 1: A long conversational response starts playing
+    await queue.enqueuePreSynthesized(
+      'audio-chunk-1',
+      'This is a long conversational explanation about system status.',
+      NarrationPriority.FINAL_RESPONSE,
+      'turn-1',
+      DEFAULT_VOICE_SETTINGS
+    );
+    expect(queue.isSpeaking()).toBe(true);
+    expect(queue.getCurrentItem()?.text).toContain('long conversational explanation');
+    expect(maxConcurrentAudio).toBeLessThanOrEqual(1);
+
+    // Step 2: A task starts during playback (ACKNOWLEDGMENT, higher priority -> preempts conversation)
+    await queue.enqueue(
+      'Right away, sir. Opening browser.',
+      NarrationPriority.ACKNOWLEDGMENT,
+      'task-100',
+      DEFAULT_VOICE_SETTINGS
+    );
+    expect(queue.isSpeaking()).toBe(true);
+    expect(queue.getCurrentItem()?.text).toContain('Right away');
+    expect(maxConcurrentAudio).toBeLessThanOrEqual(1);
+
+    // Step 3: A progress announcement (PROGRESS, enters queue)
+    await queue.enqueue(
+      'Navigating to messages tab.',
+      NarrationPriority.PROGRESS,
+      'task-100',
+      DEFAULT_VOICE_SETTINGS
+    );
+    expect(maxConcurrentAudio).toBeLessThanOrEqual(1);
+
+    // Step 4: An approval request arrives (APPROVAL, preempts)
+    await queue.enqueue(
+      'Permission is required to execute navigation.',
+      NarrationPriority.APPROVAL,
+      'task-100',
+      DEFAULT_VOICE_SETTINGS,
+      {},
+      { approvalId: 'appr-100', eventId: 'approval:appr-100:req' }
+    );
+    expect(queue.getCurrentItem()?.approvalId).toBe('appr-100');
+    expect(maxConcurrentAudio).toBeLessThanOrEqual(1);
+
+    // Step 5: Immediate approval granted by user -> stops obsolete approval speech immediately
+    await queue.onApprovalDecision('appr-100', true, DEFAULT_VOICE_SETTINGS, 'task-100');
+    expect(queue.getCurrentItem()?.text).toContain('Authorization received');
+    expect(maxConcurrentAudio).toBeLessThanOrEqual(1);
+
+    // Step 6: Task execution resumes (non-blocking)
+    // Step 7: Another progress announcement arrives
+    await queue.enqueue(
+      'Searching direct message thread.',
+      NarrationPriority.PROGRESS,
+      'task-100',
+      DEFAULT_VOICE_SETTINGS
+    );
+    expect(maxConcurrentAudio).toBeLessThanOrEqual(1);
+
+    // Step 8: Task completion arrives
+    await queue.enqueue(
+      'Task completed successfully.',
+      NarrationPriority.PROGRESS,
+      'task-100',
+      DEFAULT_VOICE_SETTINGS
+    );
+    expect(maxConcurrentAudio).toBeLessThanOrEqual(1);
+  });
+
+  it('enforces that voice PREVIEW never interrupts CRITICAL or APPROVAL alerts', async () => {
+    let preemptCount = 0;
+    queue.setCallbacks({
+      onPreempt: () => {
+        preemptCount++;
+      },
+    });
+
+    // Case 1: Playing CRITICAL safety alert
+    await queue.enqueue(
+      'Critical system fault detected.',
+      NarrationPriority.CRITICAL,
+      'task-alert',
+      DEFAULT_VOICE_SETTINGS
+    );
+    expect(queue.getCurrentItem()?.priority).toBe(NarrationPriority.CRITICAL);
+
+    // Operator clicks "Test Voice" in settings during the alert
+    await queue.enqueue(
+      'Voice preview test utterance.',
+      NarrationPriority.PREVIEW,
+      'preview-session',
+      DEFAULT_VOICE_SETTINGS
+    );
+
+    // PREVIEW MUST NOT preempt CRITICAL
+    expect(preemptCount).toBe(0);
+    expect(queue.getCurrentItem()?.priority).toBe(NarrationPriority.CRITICAL);
+
+    // Case 2: APPROVAL prompt playing
+    queue.stopAll();
+    preemptCount = 0;
+    await queue.enqueue(
+      'Sir, I need your permission before opening the browser.',
+      NarrationPriority.APPROVAL,
+      'task-appr',
+      DEFAULT_VOICE_SETTINGS,
+      {},
+      { approvalId: 'appr-safe-1' }
+    );
+    expect(queue.getCurrentItem()?.priority).toBe(NarrationPriority.APPROVAL);
+
+    // Voice preview attempted
+    await queue.enqueue(
+      'Testing audio sample.',
+      NarrationPriority.PREVIEW,
+      'preview-session',
+      DEFAULT_VOICE_SETTINGS
+    );
+
+    // PREVIEW MUST NOT preempt APPROVAL
+    expect(preemptCount).toBe(0);
+    expect(queue.getCurrentItem()?.priority).toBe(NarrationPriority.APPROVAL);
+  });
+
+  it('ensures incoming APPROVAL immediately preempts an active voice PREVIEW', async () => {
+    let preemptCount = 0;
+    queue.setCallbacks({
+      onPreempt: () => {
+        preemptCount++;
+      },
+    });
+
+    // Start a voice preview
+    await queue.enqueue(
+      'Voice preview testing underway.',
+      NarrationPriority.PREVIEW,
+      'preview-session',
+      DEFAULT_VOICE_SETTINGS
+    );
+    expect(queue.getCurrentItem()?.priority).toBe(NarrationPriority.PREVIEW);
+
+    // Consequential approval arrives
+    await queue.enqueue(
+      'Sir, I need your permission before continuing.',
+      NarrationPriority.APPROVAL,
+      'task-task-99',
+      DEFAULT_VOICE_SETTINGS,
+      {},
+      { approvalId: 'appr-preempt-preview' }
+    );
+
+    // Approval MUST immediately preempt preview
+    expect(preemptCount).toBe(1);
+    expect(queue.getCurrentItem()?.priority).toBe(NarrationPriority.APPROVAL);
+    expect(queue.getCurrentItem()?.approvalId).toBe('appr-preempt-preview');
+  });
+
+  it('allows voice PREVIEW to preempt long conversational FINAL_RESPONSE', async () => {
+    let preemptCount = 0;
+    queue.setCallbacks({
+      onPreempt: () => {
+        preemptCount++;
+      },
+    });
+
+    // Long conversational reply starts
+    await queue.enqueue(
+      'Here is an extensive explanation about planetary orbits.',
+      NarrationPriority.FINAL_RESPONSE,
+      'turn-chat',
+      DEFAULT_VOICE_SETTINGS
+    );
+    expect(queue.getCurrentItem()?.priority).toBe(NarrationPriority.FINAL_RESPONSE);
+
+    // User tests voice in settings
+    await queue.enqueue(
+      'Testing selected speaker model.',
+      NarrationPriority.PREVIEW,
+      'preview-session',
+      DEFAULT_VOICE_SETTINGS
+    );
+
+    // Preview preempts the idle conversation
+    expect(preemptCount).toBe(1);
+    expect(queue.getCurrentItem()?.priority).toBe(NarrationPriority.PREVIEW);
+  });
+
+  it('drops late-arriving events for an already cancelled task', async () => {
+    queue.cancelTask('task-cancelled-123');
+
+    // Attempt to enqueue after cancellation
+    const lateItem = await queue.enqueue(
+      'Late execution milestone.',
+      NarrationPriority.PROGRESS,
+      'task-cancelled-123',
+      DEFAULT_VOICE_SETTINGS
+    );
+
+    expect(lateItem).toBeNull();
+    expect(queue.isSpeaking()).toBe(false);
+  });
 });

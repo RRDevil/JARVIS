@@ -449,9 +449,13 @@ export const ConversationPanel: React.FC<ConversationPanelProps> = ({
                 {m.role === 'assistant' ? (
                   m.content ? (
                     <SafeMarkdown content={m.content} />
-                  ) : (
+                  ) : m.status === 'streaming' ? (
                     <div className="bubble-placeholder">
                       Synthesizing neural response...
+                    </div>
+                  ) : (
+                    <div className="bubble-placeholder" style={{ opacity: 0.75 }}>
+                      Action prepared. Awaiting authorization...
                     </div>
                   )
                 ) : (

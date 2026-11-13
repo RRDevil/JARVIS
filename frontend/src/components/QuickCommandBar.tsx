@@ -321,8 +321,10 @@ export const QuickCommandBar: React.FC<QuickCommandBarProps> = ({
                   {msg.role === 'assistant' ? (
                     msg.content.length > 0 ? (
                       <SafeMarkdown content={msg.content} />
-                    ) : (
+                    ) : msg.status === 'streaming' ? (
                       <span className="bubble-placeholder">Synthesizing neural response...</span>
+                    ) : (
+                      <span className="bubble-placeholder" style={{ opacity: 0.75 }}>Action prepared. Awaiting authorization...</span>
                     )
                   ) : (
                     <div style={{ color: 'var(--chat-text-primary, #F1F3F5)', whiteSpace: 'pre-wrap', lineHeight: '1.5', fontSize: '0.84rem' }}>

@@ -85,6 +85,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [importPathInput, setImportPathInput] = useState<string>('');
   const [importPathNameInput, setImportPathNameInput] = useState<string>('');
   const [isImportingPath, setIsImportingPath] = useState(false);
+  const [customVoiceConsentChecked, setCustomVoiceConsentChecked] = useState(false);
   const [modelsMsg, setModelsMsg] = useState<string | null>(null);
   const [isTestingVoice, setIsTestingVoice] = useState(false);
   const [recordingKeybindAction, setRecordingKeybindAction] = useState<keyof KeybindSettings | null>(null);
@@ -276,6 +277,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }));
   };
 
+  const handleEmotionalIntensityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = parseFloat(e.target.value);
+    onUpdateSettings((prev) => ({
+      ...prev,
+      voice: { ...prev.voice, emotionalIntensity: val },
+    }));
+  };
+
+  const handleSpeechPersonalityChange = (personality: string) => {
+    soundManager.play('CLICK_CUE');
+    onUpdateSettings((prev) => ({
+      ...prev,
+      voice: { ...prev.voice, speechPersonality: personality },
+    }));
+  };
+
   const handleNarrationSettingChange = (key: keyof NarrationSettings, value: any) => {
     soundManager.play('CLICK_CUE');
     onUpdateSettings((prev) => ({
@@ -327,6 +344,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleImportFromPath = async () => {
     if (!importPathInput.trim()) return;
+    if (!customVoiceConsentChecked) {
+      setModelsMsg('Explicit voice owner authorization acknowledgment is required before importing custom voice models.');
+      setTimeout(() => setModelsMsg(null), 4000);
+      return;
+    }
     setIsImportingPath(true);
     setModelsMsg('Importing model asset from disk...');
     soundManager.play('CLICK_CUE');
@@ -949,6 +971,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         {isImportingPath ? 'Importing...' : '📁 Import Path'}
                       </button>
                     </div>
+
+                    {/* Explicit Consent & Authorization Acknowledgment */}
+                    <div style={{ marginTop: '0.35rem', padding: '0.3rem 0.4rem', background: 'rgba(234, 179, 8, 0.08)', borderRadius: '2px', border: '1px solid rgba(234, 179, 8, 0.25)' }}>
+                      <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.4rem', cursor: 'pointer', fontSize: '0.64rem', color: '#fef08a' }}>
+                        <input
+                          type="checkbox"
+                          data-testid="custom-voice-consent-checkbox"
+                          checked={customVoiceConsentChecked}
+                          onChange={(e) => setCustomVoiceConsentChecked(e.target.checked)}
+                          style={{ marginTop: '0.15rem' }}
+                        />
+                        <span>
+                          <strong>Authorization & Consent:</strong> I confirm that I own or have obtained explicit authorization from the voice owner to clone or use this voice model.
+                        </span>
+                      </label>
+                      <div style={{ fontSize: '0.58rem', color: 'rgba(254, 240, 138, 0.7)', marginTop: '0.2rem', paddingLeft: '1.2rem', lineHeight: '1.2' }}>
+                        Notice: This checkbox is an internal acknowledgment mechanism to prevent unauthorized voice cloning. It does not constitute legal proof of authorization. Custom voices of individuals must never be used without documented permission.
+                      </div>
+                    </div>
                   </div>
 
                   {modelsMsg && (
@@ -1166,6 +1207,53 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                   <div style={{ fontSize: '0.66rem', color: 'var(--hud-text-muted)', marginTop: '0.25rem', lineHeight: '1.2' }}>
                     {DELIVERY_PROFILES[settings.voice.deliveryProfile || 'relaxed']?.description}
+                  </div>
+                </div>
+
+                {/* Speech Intelligence & Adaptive Emotion (Milestone 6.1) */}
+                <div style={{ marginTop: '0.4rem', borderTop: '1px dashed rgba(56, 189, 248, 0.25)', paddingTop: '0.4rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--hud-text-muted)', marginBottom: '0.3rem' }}>
+                    <span style={{ color: '#38bdf8', fontWeight: 600 }}>Speech Personality & Dynamic Emotion</span>
+                    <span style={{ fontFamily: 'var(--hud-font-mono)', fontSize: '0.68rem' }}>Cinematic Context</span>
+                  </div>
+
+                  {/* Personality selector */}
+                  <div style={{ display: 'flex', gap: '0.35rem', marginBottom: '0.35rem' }}>
+                    <button
+                      type="button"
+                      className={`sim-btn ${(settings.voice.speechPersonality || 'balanced_cinematic') === 'balanced_cinematic' ? 'active' : ''}`}
+                      onClick={() => handleSpeechPersonalityChange('balanced_cinematic')}
+                      style={{
+                        flex: 1,
+                        fontSize: '0.66rem',
+                        padding: '0.25rem 0.4rem',
+                      }}
+                    >
+                      Balanced Cinematic (Default)
+                    </button>
+                  </div>
+
+                  {/* Emotional Intensity Slider */}
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--hud-text-muted)' }}>
+                      <span>Adaptive Emotional Intensity</span>
+                      <span style={{ fontFamily: 'var(--hud-font-mono)' }}>
+                        {((settings.voice.emotionalIntensity ?? 1.0) * 100).toFixed(0)}%
+                        {(settings.voice.emotionalIntensity ?? 1.0) === 1.0 ? ' (Standard)' : (settings.voice.emotionalIntensity ?? 1.0) === 0 ? ' (Neutral Only)' : ''}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.0"
+                      max="1.5"
+                      step="0.1"
+                      value={settings.voice.emotionalIntensity ?? 1.0}
+                      onChange={handleEmotionalIntensityChange}
+                      style={{ width: '100%', accentColor: 'var(--hud-primary)', marginTop: '0.15rem' }}
+                    />
+                    <div style={{ fontSize: '0.62rem', color: 'var(--hud-text-muted)', marginTop: '0.15rem' }}>
+                      Modulates pitch, pace, and vocal energy across 9 semantic contexts (technical, acknowledgment, error, warnings, completion).
+                    </div>
                   </div>
                 </div>
 
